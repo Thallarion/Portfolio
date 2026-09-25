@@ -1,0 +1,38 @@
+KRYPTO-PORTFOLIO ALS ANDROID-APP
+================================
+
+Dieser Ordner ist eine installierbare Web-App. Android installiert sie aus Chrome heraus wie eine
+normale App (eigenes Symbol, Vollbild, offline nutzbar). Dafür muss der Ordner einmal auf einer
+HTTPS-Adresse liegen – eine Datei direkt vom Handy-Speicher zu öffnen reicht dafür nicht.
+
+1) Online stellen (kostenlos, einmalig)
+   Variante A – GitHub Pages:
+     - Auf github.com ein kostenloses Konto anlegen, "New repository" (z. B. krypto-portfolio), Public.
+     - "Add file" > "Upload files": ALLE Dateien und den Ordner "icons" aus diesem Ordner hochladen
+       (nicht die ZIP-Datei selbst), "Commit changes".
+     - Settings > Pages > Source: "Deploy from a branch", Branch "main", Ordner "/ (root)", Save.
+     - Nach 1–2 Minuten erscheint dort die Adresse, z. B. https://DEINNAME.github.io/krypto-portfolio/
+   Variante B – Netlify Drop:
+     - https://app.netlify.com/drop öffnen, kostenloses Konto anlegen, diesen Ordner in das Feld ziehen.
+   Hinweis: Die Adresse ist öffentlich erreichbar, enthält aber KEINE Portfoliodaten. Deine Daten
+   bleiben ausschließlich auf deinem Handy (im Speicher der App).
+
+2) Auf dem Android-Handy installieren
+   - Die Adresse in Chrome öffnen.
+   - Menü (⋮) > "App installieren" bzw. "Zum Startbildschirm hinzufügen" > "Installieren".
+   - Die App "Krypto" erscheint in der App-Übersicht und startet ohne Adressleiste.
+
+3) Daten übernehmen
+   - In der bisherigen Version: Daten > "JSON-Backup herunterladen".
+   - In der App: Daten > "JSON-Backup wiederherstellen …" und die Datei auswählen.
+   Die App speichert getrennt von der HTML-Datei und vom Link – ohne Import startet sie leer.
+   Regelmäßig ein Backup machen: Beim Deinstallieren der App oder beim Löschen der Chrome-Daten
+   gehen die Daten sonst verloren.
+
+4) Updates
+   Neue Dateien einfach an derselben Stelle hochladen. Die App lädt sie beim nächsten Start mit
+   Internet; die Daten bleiben erhalten.
+
+Offline: Die App startet ohne Internet und zeigt die zuletzt geladenen Kurse (als möglicherweise
+veraltet markiert). Live-Kurse und die Coin-Suche brauchen Internet (CoinGecko).
+Keine Anlage- oder Steuerberatung.

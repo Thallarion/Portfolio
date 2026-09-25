@@ -1,0 +1,2687 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  SICHERHEITSHINWEISE (Content Security Policy)
+  ---------------------------------------------
+  Diese App ist bewusst eine einzelne HTML-Datei. Eine vollständig strikte CSP
+  (kein eingebettetes CSS/JS, nur 'self'-Dateien) ist damit nicht vereinbar:
+  - Eingebettete Skriptblöcke werden NICHT per 'unsafe-inline' freigegeben,
+    sondern einzeln über ihre SHA-256-Hashes. Wird ein Skriptblock geändert,
+    muss der Hash neu berechnet werden:  node check_crypto_portfolio.js --fix-csp
+    (sonst blockiert der Browser das geänderte Skript).
+  - Eingebettetes CSS benötigt style-src 'unsafe-inline'. Das Risiko ist gering,
+    weil keine Benutzerdaten als HTML/CSS eingefügt werden (nur textContent).
+  - Eine per <meta> gesetzte CSP kann frame-ancestors, report-uri und sandbox
+    nicht setzen; dafür wäre ein Webserver mit HTTP-Headern nötig.
+  - Chart.js wird nur von genau einer URL (feste Version 4.4.1) mit
+    Subresource Integrity geladen. Die Prüfsumme wurde aus dem offiziellen
+    npm-Paket chart.js@4.4.1 (dist/chart.umd.js) berechnet. Sicherer wäre eine
+    lokal mitgelieferte Kopie der Bibliothek (keine Abhängigkeit vom CDN).
+  - Netzwerkzugriffe sind nur zu https://api.coingecko.com erlaubt.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-4jXTuYAiSts0eE8eeV0qLBNGTwAe5ryKS+CT02b0OPQ=' 'sha256-x/Mt0ca0hbr2yZ3bAKgSCeO30WRAG17OKkaxNtjjpss=' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js; style-src 'unsafe-inline'; connect-src https://api.coingecko.com; img-src 'self' data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'; media-src 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#17325e">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>Krypto-Portfolio</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f4; --text: #1b1f27; --muted: #5a6272;
+    --border: #d5d9e0; --accent: #1f5fbf; --accent-contrast: #ffffff; --pos: #13753a; --neg: #b3261e;
+    --warn-bg: #fff4d6; --warn-border: #c99a00; --err-bg: #fde8e7; --err-border: #b3261e;
+    --ok-bg: #e5f5ea; --focus: #ff9f1a; --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.06); color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --surface: #1b2029; --surface-2: #242b36; --text: #e8ebf0; --muted: #a3acba;
+      --border: #343d4b; --accent: #6ea8ff; --accent-contrast: #0d1117; --pos: #4cc97a; --neg: #ff7b72;
+      --warn-bg: #3a3014; --warn-border: #d6a800; --err-bg: #3d1d1b; --err-border: #ff7b72; --ok-bg: #173323;
+      --shadow: none; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+      --bg: #12151b; --surface: #1b2029; --surface-2: #242b36; --text: #e8ebf0; --muted: #a3acba;
+      --border: #343d4b; --accent: #6ea8ff; --accent-contrast: #0d1117; --pos: #4cc97a; --neg: #ff7b72;
+      --warn-bg: #3a3014; --warn-border: #d6a800; --err-bg: #3d1d1b; --err-border: #ff7b72; --ok-bg: #173323;
+      --shadow: none; color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; min-width: 320px; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .skip-link { position: absolute; left: -9999px; top: 0; background: var(--surface); padding: 8px 12px; z-index: 10; }
+  .skip-link:focus { left: 8px; top: 8px; }
+  .sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+  header.app-header { background: var(--surface); border-bottom: 1px solid var(--border); }
+  .header-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 0; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h2 { font-size: 1.15rem; margin: 0 0 12px; }
+  h3 { font-size: 1rem; margin: 16px 0 8px; }
+  .header-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  fieldset.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; margin: 0; }
+  fieldset.segmented legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .segmented label { position: relative; }
+  .segmented input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .segmented span { display: inline-block; padding: 4px 12px; border-radius: 999px; min-width: 52px; text-align: center; }
+  .segmented input:checked + span { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+  .segmented input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 1px; }
+  .price-status { font-size: .85rem; color: var(--muted); padding: 0 0 10px; }
+  .price-status .stale { color: var(--text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 0 6px; }
+  button, .btn { font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+    padding: 8px 14px; cursor: pointer; min-height: 40px; }
+  button.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); font-weight: 600; }
+  button.danger { border-color: var(--neg); color: var(--neg); background: transparent; }
+  button.small { padding: 4px 10px; min-height: 32px; font-size: .9rem; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  nav.tabs { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+  nav.tabs .wrap { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+  nav.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; white-space: nowrap; padding: 10px 12px; }
+  nav.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 700; }
+  main { padding: 16px 0 32px; }
+  section[role="tabpanel"] > .wrap > * + * { margin-top: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .kpi .label { font-size: .8rem; color: var(--muted); }
+  .kpi .value { font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+  .kpi .sub { font-size: .8rem; color: var(--muted); }
+  .gain-pos { color: var(--pos); }
+  .gain-neg { color: var(--neg); }
+  .notice { border-left: 4px solid var(--warn-border); background: var(--warn-bg); padding: 10px 12px; border-radius: 6px; }
+  .notice.error { border-left-color: var(--err-border); background: var(--err-bg); }
+  .notice.ok { border-left-color: var(--pos); background: var(--ok-bg); }
+  .notice p { margin: 4px 0; }
+  .banner { margin: 12px auto; }
+  .banner .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  figure.card { margin: 0; min-width: 0; }
+  .chart-box { position: relative; height: 260px; }
+  .chart-box canvas { width: 100% !important; height: 100% !important; }
+  .chart-fallback { color: var(--muted); font-size: .9rem; }
+  .chart-summary { font-size: .85rem; color: var(--muted); margin: 8px 0 0; overflow-wrap: anywhere; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  table.data-table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  .data-table th, .data-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .data-table th { background: var(--surface-2); font-weight: 600; white-space: nowrap; }
+  .data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .data-table td.text-cell { overflow-wrap: anywhere; white-space: pre-wrap; max-width: 280px; }
+  .data-table tr.sub-row td { background: var(--surface-2); font-size: .85rem; }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; border: 1px solid var(--border); white-space: nowrap; }
+  .badge.buy { border-color: var(--pos); }
+  .badge.sell { border-color: var(--neg); }
+  .empty { color: var(--muted); font-style: italic; }
+  form .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.wide { grid-column: 1 / -1; }
+  label, .label-text { font-weight: 600; font-size: .9rem; }
+  .hint { font-size: .8rem; color: var(--muted); }
+  input[type="text"], input[type="search"], input[type="date"], input[type="time"], select, textarea {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; min-height: 40px; width: 100%; }
+  textarea { min-height: 70px; resize: vertical; }
+  input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border: 2px solid var(--neg); }
+  .field-error { color: var(--neg); font-size: .85rem; font-weight: 600; }
+  .field-error::before { content: "⚠ "; }
+  fieldset.plain { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 0; min-width: 0; }
+  fieldset.plain legend { font-weight: 700; padding: 0 6px; }
+  .radio-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .radio-row label { font-weight: 400; display: inline-flex; gap: 6px; align-items: center; }
+  .search-row { display: flex; gap: 8px; }
+  .search-row input { flex: 1; min-width: 0; }
+  ul.result-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+  ul.result-list button { width: 100%; text-align: left; }
+  .form-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .error-list { margin: 0; padding-left: 20px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+  .toolbar .field { min-width: 180px; flex: 1; }
+  .check-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  .check-list li { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); overflow-wrap: anywhere; }
+  .check-list li.ok { border-left: 5px solid var(--pos); }
+  .check-list li.warn { border-left: 5px solid var(--warn-border); }
+  .check-list li.fail { border-left: 5px solid var(--neg); }
+  #app-error { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+  #export-text { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 160px; }
+  .status-line { min-height: 1.5em; font-size: .9rem; }
+  footer { color: var(--muted); font-size: .8rem; padding: 16px 0 32px; }
+  dialog { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); max-width: min(480px, calc(100vw - 32px)); padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  details > summary { cursor: pointer; }
+  @media (max-width: 640px) {
+    body { font-size: 14px; }
+    .data-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
+    .data-table tr { border-bottom: 2px solid var(--border); padding: 4px 0; }
+    .data-table td { border: 0; display: flex; justify-content: space-between; gap: 12px; padding: 4px 10px; text-align: right; }
+    .data-table td::before { content: attr(data-label); font-weight: 600; text-align: left; color: var(--muted); flex: 0 0 42%; }
+    .data-table td.num { text-align: right; }
+    .data-table td.text-cell { max-width: none; }
+    .table-wrap { overflow-x: visible; }
+    .chart-box { height: 220px; }
+    .search-row { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">Zum Inhalt springen</a>
+
+<header class="app-header">
+  <div class="wrap">
+    <div class="header-row">
+      <h1>Krypto-Portfolio <span class="hint">(FIFO · EUR/USD)</span></h1>
+      <div class="header-controls">
+        <fieldset class="segmented" id="currency-toggle">
+          <legend>Anzeigewährung</legend>
+          <label><input type="radio" name="display-currency" id="cur-eur" value="EUR" checked><span>EUR</span></label>
+          <label><input type="radio" name="display-currency" id="cur-usd" value="USD"><span>USD</span></label>
+        </fieldset>
+        <button type="button" id="btn-refresh" class="primary">Kurse aktualisieren</button>
+      </div>
+    </div>
+    <p class="price-status" id="price-status" aria-live="polite">Kurse: noch nicht geladen.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="app-error" class="notice error banner" role="alert" hidden>
+    <p id="app-error-text"></p>
+    <div class="actions"><button type="button" id="app-error-close" class="small">Meldung schließen</button></div>
+  </div>
+  <div id="app-status" class="status-line" role="status" aria-live="polite"></div>
+  <section id="recovery-panel" class="notice error banner" hidden aria-labelledby="recovery-title">
+    <h2 id="recovery-title">Gespeicherte Daten konnten nicht geladen werden</h2>
+    <p>Die im Browser gespeicherten Portfoliodaten sind beschädigt oder haben ein nicht unterstütztes Format. Sie wurden <strong>nicht</strong> überschrieben. Bis zur Klärung ist die Bearbeitung gesperrt.</p>
+    <ul id="recovery-errors" class="error-list"></ul>
+    <div class="actions">
+      <button type="button" id="btn-recovery-download">Rohdaten herunterladen</button>
+      <button type="button" id="btn-recovery-import">Backup importieren …</button>
+      <button type="button" id="btn-recovery-discard" class="danger">Beschädigte Daten verwerfen</button>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" aria-label="Bereiche">
+  <div class="wrap" role="tablist" id="tablist">
+    <button type="button" role="tab" id="tabbtn-dashboard" data-tab="dashboard" aria-controls="tab-dashboard" aria-selected="true">Dashboard</button>
+    <button type="button" role="tab" id="tabbtn-transactions" data-tab="transactions" aria-controls="tab-transactions" aria-selected="false" tabindex="-1">Transaktionen</button>
+    <button type="button" role="tab" id="tabbtn-fifo" data-tab="fifo" aria-controls="tab-fifo" aria-selected="false" tabindex="-1">FIFO-Auswertung</button>
+    <button type="button" role="tab" id="tabbtn-holding" data-tab="holding" aria-controls="tab-holding" aria-selected="false" tabindex="-1">Haltefrist</button>
+    <button type="button" role="tab" id="tabbtn-data" data-tab="data" aria-controls="tab-data" aria-selected="false" tabindex="-1">Daten</button>
+    <button type="button" role="tab" id="tabbtn-system" data-tab="system" aria-controls="tab-system" aria-selected="false" tabindex="-1">Systemprüfung</button>
+  </div>
+</nav>
+
+<main id="main" tabindex="-1">
+  <!-- ===================== DASHBOARD ===================== -->
+  <section id="tab-dashboard" role="tabpanel" aria-labelledby="tabbtn-dashboard">
+    <div class="wrap">
+      <h2>Dashboard</h2>
+      <div id="dash-kpis" class="kpis" aria-label="Kennzahlen"></div>
+      <div id="dash-notices"></div>
+      <div class="charts">
+        <figure class="card" aria-labelledby="chart-alloc-title">
+          <h3 id="chart-alloc-title">Portfolio-Aufteilung (aktueller Wert)</h3>
+          <div class="chart-box"><canvas id="chart-alloc" role="img" aria-label="Kreisdiagramm der Portfolio-Aufteilung" hidden></canvas><p class="chart-fallback" id="chart-alloc-fallback">Diagramme werden geladen …</p></div>
+          <p class="chart-summary" id="chart-alloc-summary"></p>
+        </figure>
+        <figure class="card" aria-labelledby="chart-invest-title">
+          <h3 id="chart-invest-title">Investiert vs. aktueller Wert</h3>
+          <div class="chart-box"><canvas id="chart-invest" role="img" aria-label="Balkendiagramm investierter Betrag gegenüber aktuellem Wert" hidden></canvas><p class="chart-fallback" id="chart-invest-fallback">Diagramme werden geladen …</p></div>
+          <p class="chart-summary" id="chart-invest-summary"></p>
+        </figure>
+        <figure class="card" aria-labelledby="chart-history-title">
+          <h3 id="chart-history-title">Historischer Portfoliowert</h3>
+          <div class="chart-box"><canvas id="chart-history" role="img" aria-label="Liniendiagramm des historischen Portfoliowerts" hidden></canvas><p class="chart-fallback" id="chart-history-fallback">Diagramme werden geladen …</p></div>
+          <p class="chart-summary" id="chart-history-summary"></p>
+        </figure>
+      </div>
+      <h3>Positionen</h3>
+      <div id="dash-positions"></div>
+    </div>
+  </section>
+
+  <!-- ===================== TRANSAKTIONEN ===================== -->
+  <section id="tab-transactions" role="tabpanel" aria-labelledby="tabbtn-transactions" hidden>
+    <div class="wrap">
+      <h2 id="tx-form-title">Transaktion erfassen</h2>
+      <form id="tx-form" class="card" novalidate aria-labelledby="tx-form-title">
+        <div id="tx-form-errors" class="notice error" role="alert" tabindex="-1" hidden>
+          <p><strong>Bitte korrigieren:</strong></p>
+          <ul class="error-list" id="tx-form-error-list"></ul>
+        </div>
+        <div class="grid">
+          <fieldset class="plain field wide" id="f-type-group" aria-describedby="err-type">
+            <legend>Typ</legend>
+            <div class="radio-row">
+              <label><input type="radio" name="tx-type" id="f-type-buy" value="buy" checked> Kauf</label>
+              <label><input type="radio" name="tx-type" id="f-type-sell" value="sell"> Verkauf</label>
+            </div>
+            <p class="field-error" id="err-type" hidden></p>
+          </fieldset>
+
+          <fieldset class="plain field wide">
+            <legend>Coin</legend>
+            <div class="field">
+              <label for="f-coin-search">Coin-Suche (CoinGecko)</label>
+              <div class="search-row">
+                <input type="search" id="f-coin-search" maxlength="50" autocomplete="off" placeholder="z. B. bitcoin, eth, solana" aria-describedby="coin-search-hint">
+                <button type="button" id="btn-coin-search">Suchen</button>
+              </div>
+              <span class="hint" id="coin-search-hint">Suche benötigt Internet. Offline: bereits verwendeten Coin wählen oder Felder manuell ausfüllen.</span>
+              <div id="coin-search-status" class="hint" role="status" aria-live="polite"></div>
+              <ul id="coin-search-results" class="result-list" aria-label="Suchergebnisse"></ul>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label for="f-known-coin">Bereits verwendeter Coin</label>
+              <select id="f-known-coin"><option value="">– auswählen –</option></select>
+            </div>
+            <div class="grid" style="margin-top:8px">
+              <div class="field">
+                <label for="f-coin-id">Coin-ID</label>
+                <input type="text" id="f-coin-id" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="err-coinId hint-coin-id">
+                <span class="hint" id="hint-coin-id">CoinGecko-ID, z. B. „bitcoin“</span>
+                <p class="field-error" id="err-coinId" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-coin-name">Coin-Name</label>
+                <input type="text" id="f-coin-name" maxlength="100" autocomplete="off" aria-describedby="err-coinName">
+                <p class="field-error" id="err-coinName" hidden></p>
+              </div>
+              <div class="field">
+                <label for="f-symbol">Symbol</label>
+                <input type="text" id="f-symbol" maxlength="20" autocomplete="off" spellcheck="false" aria-describedby="err-symbol">
+                <p class="field-error" id="err-symbol" hidden></p>
+              </div>
+            </div>
+          </fieldset>
+
+          <div class="field">
+            <label for="f-quantity">Menge</label>
+            <input type="text" id="f-quantity" inputmode="decimal" autocomplete="off" aria-describedby="err-quantity hint-quantity">
+            <span class="hint" id="hint-quantity">Dezimaltrennzeichen Komma oder Punkt, keine Tausenderpunkte</span>
+            <p class="field-error" id="err-quantity" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-price">Preis pro Einheit</label>
+            <input type="text" id="f-price" inputmode="decimal" autocomplete="off" aria-describedby="err-inputPrice">
+            <button type="button" id="btn-use-current-price" class="small">Aktuellen Kurs übernehmen</button>
+            <p class="field-error" id="err-inputPrice" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-currency">Eingabewährung</label>
+            <select id="f-currency" aria-describedby="err-inputCurrency hint-currency">
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+            </select>
+            <span class="hint" id="hint-currency">USD wird mit dem aktuellen EUR/USD-Kurs in EUR umgerechnet und gespeichert.</span>
+            <p class="field-error" id="err-inputCurrency" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-date">Datum</label>
+            <input type="date" id="f-date" min="2009-01-03" aria-describedby="err-date">
+            <p class="field-error" id="err-date" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-time">Uhrzeit</label>
+            <input type="time" id="f-time" step="1" aria-describedby="err-time">
+            <p class="field-error" id="err-time" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-fee">Gebühr</label>
+            <input type="text" id="f-fee" inputmode="decimal" autocomplete="off" value="0" aria-describedby="err-fee hint-fee">
+            <span class="hint" id="hint-fee">0 eintragen, wenn keine Gebühr anfiel</span>
+            <p class="field-error" id="err-fee" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-fee-type">Gebührenart</label>
+            <select id="f-fee-type" aria-describedby="err-feeType">
+              <option value="amount">Betrag (in Eingabewährung)</option>
+              <option value="percent">Prozent vom Handelswert</option>
+            </select>
+            <p class="field-error" id="err-feeType" hidden></p>
+          </div>
+          <div class="field">
+            <label for="f-exchange">Börse oder Wallet</label>
+            <input type="text" id="f-exchange" maxlength="100" autocomplete="off" aria-describedby="err-exchange">
+            <p class="field-error" id="err-exchange" hidden></p>
+          </div>
+          <div class="field wide">
+            <label for="f-note">Notiz</label>
+            <textarea id="f-note" maxlength="1000" aria-describedby="err-note"></textarea>
+            <p class="field-error" id="err-note" hidden></p>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary" id="btn-tx-save">Transaktion speichern</button>
+          <button type="button" id="btn-tx-cancel" hidden>Bearbeitung abbrechen</button>
+          <button type="button" id="btn-tx-reset">Formular leeren</button>
+        </div>
+      </form>
+
+      <h2 id="tx-list-title">Transaktionsübersicht</h2>
+      <div class="toolbar">
+        <div class="field">
+          <label for="tx-filter">Filter (Coin, Börse, Notiz)</label>
+          <input type="search" id="tx-filter" maxlength="100" autocomplete="off">
+        </div>
+      </div>
+      <div id="tx-list"></div>
+    </div>
+  </section>
+
+  <!-- ===================== FIFO ===================== -->
+  <section id="tab-fifo" role="tabpanel" aria-labelledby="tabbtn-fifo" hidden>
+    <div class="wrap">
+      <h2>FIFO-Auswertung</h2>
+      <p class="hint">Verkäufe werden je Coin den ältesten offenen Kauf-Lots zugeordnet (Reihenfolge: Datum, Uhrzeit, Erfassungsreihenfolge). Kaufgebühren erhöhen die Anschaffungskosten, Verkaufsgebühren mindern den Erlös – jeweils anteilig.</p>
+      <div class="toolbar">
+        <div class="field">
+          <label for="fifo-coin">Coin</label>
+          <select id="fifo-coin"><option value="">Alle Coins</option></select>
+        </div>
+      </div>
+      <div id="fifo-summary"></div>
+      <h3>Realisierte Gewinne und Verluste</h3>
+      <div id="fifo-realized"></div>
+      <h3>Offene Kauf-Lots (unrealisiert)</h3>
+      <div id="fifo-open"></div>
+    </div>
+  </section>
+
+  <!-- ===================== HALTEFRIST ===================== -->
+  <section id="tab-holding" role="tabpanel" aria-labelledby="tabbtn-holding" hidden>
+    <div class="wrap">
+      <h2>Haltefristübersicht</h2>
+      <div class="notice">
+        <p><strong>Unverbindliche Orientierung – keine Steuerberatung.</strong> Die Übersicht rechnet nur Kalendertage je Kauf-Lot nach FIFO. Ob und wie Gewinne steuerpflichtig sind, hängt vom Einzelfall ab (z. B. Staking, Lending, Wohnsitz, Rechtslage). Bitte steuerliche Fragen mit einer fachkundigen Person klären.</p>
+        <p>Rechenregel: Das Fristende ist der gleiche Kalendertag im Folgejahr; bei einem Kauf am 29. Februar der 28. Februar des Folgejahres. „Rechnerisch länger als ein Jahr gehalten“ gilt ab dem Tag nach dem Fristende.</p>
+      </div>
+      <div class="toolbar">
+        <div class="field">
+          <label for="holding-coin">Coin</label>
+          <select id="holding-coin"><option value="">Alle Coins</option></select>
+        </div>
+        <div class="field">
+          <label for="holding-show-sold"><input type="checkbox" id="holding-show-sold"> vollständig verkaufte Lots anzeigen</label>
+        </div>
+      </div>
+      <div id="holding-list"></div>
+    </div>
+  </section>
+
+  <!-- ===================== DATEN ===================== -->
+  <section id="tab-data" role="tabpanel" aria-labelledby="tabbtn-data" hidden>
+    <div class="wrap">
+      <h2>Daten, Backup und Import</h2>
+      <div class="notice" id="storage-notice">
+        <p><strong>Hinweis zur Speicherung:</strong> Alle Daten liegen ausschließlich im LocalStorage dieses Browsers. LocalStorage ist <strong>nicht verschlüsselt</strong> und <strong>nicht revisionssicher</strong>: Jede Person oder Erweiterung mit Zugriff auf dieses Browserprofil kann die Daten lesen oder ändern, und beim Löschen der Browserdaten gehen sie verloren. Erstellen Sie regelmäßig ein JSON-Backup.</p>
+        <p id="storage-usage"></p>
+      </div>
+
+      <div class="card">
+        <h3>JSON-Backup</h3>
+        <div class="form-actions">
+          <button type="button" id="btn-export-json">JSON-Backup herunterladen</button>
+          <label class="btn" for="file-json">JSON-Backup wiederherstellen …</label>
+          <input type="file" id="file-json" accept=".json,application/json" class="sr-only">
+        </div>
+        <p class="hint">Wiederherstellen ersetzt nach Prüfung und Bestätigung alle Transaktionen. Max. 5 MB.</p>
+      </div>
+
+      <div class="card">
+        <h3>CSV</h3>
+        <div class="form-actions">
+          <button type="button" id="btn-export-csv">CSV exportieren</button>
+          <label class="btn" for="file-csv">CSV importieren …</label>
+          <input type="file" id="file-csv" accept=".csv,text/csv,text/plain" class="sr-only">
+        </div>
+        <fieldset class="plain" style="margin-top:12px">
+          <legend>Importmodus für CSV</legend>
+          <div class="radio-row">
+            <label><input type="radio" name="csv-mode" id="csv-mode-append" value="append" checked> an bestehende Transaktionen anhängen</label>
+            <label><input type="radio" name="csv-mode" id="csv-mode-replace" value="replace"> alle Transaktionen ersetzen</label>
+          </div>
+        </fieldset>
+        <details style="margin-top:12px">
+          <summary>CSV-Format</summary>
+          <p class="hint">UTF-8 mit BOM, Semikolon als Trennzeichen, Felder mit Semikolon, Anführungszeichen oder Zeilenumbruch in doppelten Anführungszeichen. Pflichtspalten: <code>typ; coin_id; symbol; menge; preis; waehrung; datum; uhrzeit</code>. Optionale Spalten: <code>id; coin_name; preis_eur; wechselkurs_usd_je_eur; gebuehr; gebuehrenart; boerse_wallet; notiz</code>. Typ: kauf/verkauf (oder buy/sell). Gebührenart: betrag/prozent. Datum: JJJJ-MM-TT oder TT.MM.JJJJ. Beim Import werden neue IDs vergeben. Textfelder, die mit = + - @ Tabulator oder Wagenrücklauf beginnen, werden beim Export mit einem vorangestellten Apostroph entschärft (Schutz vor Formel-Injection in Tabellenkalkulationen); beim Import wird dieser Apostroph wieder entfernt.</p>
+        </details>
+      </div>
+
+      <section id="export-fallback" class="card" hidden aria-labelledby="export-fallback-title">
+        <h3 id="export-fallback-title">Exportinhalt</h3>
+        <p class="hint">Falls kein Download startet (z. B. in eingebetteten Ansichten), den Inhalt kopieren und als Datei mit dem angegebenen Namen speichern.</p>
+        <p class="hint" id="export-fallback-name"></p>
+        <textarea id="export-text" readonly aria-labelledby="export-fallback-title" spellcheck="false"></textarea>
+        <div class="form-actions">
+          <button type="button" id="btn-export-copy">In Zwischenablage kopieren</button>
+          <button type="button" id="btn-export-close">Schließen</button>
+        </div>
+      </section>
+
+      <section id="import-preview" class="card" hidden aria-labelledby="import-preview-title">
+        <h3 id="import-preview-title">Import-Vorschau</h3>
+        <div id="import-preview-body"></div>
+        <div class="form-actions">
+          <button type="button" id="btn-import-apply" class="primary">Import übernehmen</button>
+          <button type="button" id="btn-import-discard">Verwerfen</button>
+        </div>
+      </section>
+
+      <div class="card">
+        <h3>Alles löschen</h3>
+        <p class="hint">Entfernt Transaktionen, Kurse und Verlauf aus diesem Browser. Vorher ein Backup erstellen.</p>
+        <button type="button" id="btn-delete-all" class="danger">Alle Daten löschen …</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SYSTEMPRÜFUNG ===================== -->
+  <section id="tab-system" role="tabpanel" aria-labelledby="tabbtn-system" hidden>
+    <div class="wrap">
+      <h2>Systemprüfung</h2>
+      <p class="hint">Prüft Rechenkern, gespeicherte Daten, Speicher, Kurse, Diagrammbibliothek und Sicherheitsvorgaben in diesem Browser.</p>
+      <button type="button" id="btn-run-checks" class="primary">Prüfung ausführen</button>
+      <p id="system-summary" role="status" aria-live="polite"></p>
+      <ul id="system-results" class="check-list"></ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Kursdaten: CoinGecko (öffentliche API, ohne Gewähr). Interne Basiswährung ist EUR; die USD-Anzeige nutzt den jeweils zuletzt geladenen EUR/USD-Kurs, nicht historische Wechselkurse. Keine Anlage- oder Steuerberatung.</p>
+  </div>
+</footer>
+
+<dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+  <h2 id="confirm-title">Bestätigen</h2>
+  <p id="confirm-message"></p>
+  <div class="form-actions">
+    <button type="button" id="confirm-ok" class="primary">OK</button>
+    <button type="button" id="confirm-cancel">Abbrechen</button>
+  </div>
+</dialog>
+
+<noscript><p class="wrap notice error">Diese Anwendung benötigt JavaScript.</p></noscript>
+
+<script id="kp-core">
+/* =====================================================================
+   KERNLOGIK (ohne DOM) – wird von der Oberfläche und von
+   test_crypto_portfolio.js (Node.js) gemeinsam verwendet.
+   ===================================================================== */
+(function (root) {
+  'use strict';
+
+  const APP_ID = 'krypto-portfolio-fifo';
+  const SCHEMA_VERSION = 1;
+
+  const LIMITS = Object.freeze({
+    MAX_TRANSACTIONS: 20000,
+    MAX_IMPORT_BYTES: 5 * 1024 * 1024,
+    MAX_CSV_ROWS: 20000,
+    MIN_QUANTITY: 1e-12,
+    MAX_QUANTITY: 1e15,
+    MAX_PRICE: 1e9,            // pro Einheit, EUR bzw. USD
+    MAX_FEE_AMOUNT: 1e9,
+    MAX_FEE_PERCENT: 20,       // plausible Obergrenze für Prozentgebühren
+    MAX_TX_VALUE_EUR: 1e13,
+    MAX_API_PRICE_EUR: 1e9,
+    MIN_DATE: '2009-01-03',    // Bitcoin-Genesis-Block
+    FX_MIN: 0.5,               // plausibler Bereich USD je EUR
+    FX_MAX: 2.5,
+    MAX_SNAPSHOTS: 3660,
+    MAX_SNAPSHOT_VALUE_EUR: 1e15,
+    MAX_PRICE_CACHE_ENTRIES: 5000,
+    MAX_SEARCH_RESULTS: 20,
+    TEXT: Object.freeze({ id: 64, coinId: 100, coinName: 100, symbol: 20, exchange: 100, note: 1000 })
+  });
+
+  /* Mengen-Toleranz (dokumentiert):
+     Zwei Mengen gelten als gleich, wenn |a - b| <= max(|a|, |b|) * 1e-10 + 1e-18.
+     Hintergrund: Gleitkommarundung (z. B. 0.1 + 0.2 != 0.3). Restmengen eines Lots
+     innerhalb dieser Toleranz werden als 0 behandelt (Lot geschlossen). Ein Verkauf
+     ist nur zulässig, wenn Verkaufsmenge <= verfügbarer Bestand + Toleranz.
+     Die kleinste erfassbare Menge ist 1e-12, also weit oberhalb der absoluten Toleranz. */
+  const QTY_REL_TOL = 1e-10;
+  const QTY_ABS_TOL = 1e-18;
+  function qtyTolerance(a, b) {
+    return Math.max(Math.abs(a), Math.abs(b || 0)) * QTY_REL_TOL + QTY_ABS_TOL;
+  }
+
+  const hasOwn = (o, k) => o !== null && o !== undefined && Object.prototype.hasOwnProperty.call(o, k);
+  function isPlainObject(v) {
+    return v !== null && typeof v === 'object' && !Array.isArray(v) &&
+      Object.prototype.toString.call(v) === '[object Object]';
+  }
+  const pad2 = (n) => (n < 10 ? '0' : '') + n;
+  function pad4(n) { let s = String(n); while (s.length < 4) s = '0' + s; return s; }
+
+  /* ---------------- Zahlen ---------------- */
+  const NUMBER_PATTERN = /^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d{1,3})?$/;
+
+  /* Liefert { state: 'missing' | 'invalid' | 'ok', value?, reason? }.
+     Unterscheidet fehlende Werte (undefined, null, leerer Text) von ungültigen
+     (NaN, Infinity, Text) und echten Nullwerten. Ersetzt nie still durch 0. */
+  function parseNumber(value) {
+    if (value === undefined || value === null) return { state: 'missing' };
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return { state: 'invalid', reason: 'Wert ist nicht endlich (NaN oder Infinity).' };
+      return { state: 'ok', value: value === 0 ? 0 : value };
+    }
+    if (typeof value !== 'string') return { state: 'invalid', reason: 'Wert ist keine Zahl.' };
+    const s = value.trim();
+    if (s === '') return { state: 'missing' };
+    if (s.length > 40 || !NUMBER_PATTERN.test(s)) {
+      return { state: 'invalid', reason: 'Ungültiges Zahlenformat (erlaubt z. B. 1234,56 oder 1234.56; keine Tausendertrennzeichen).' };
+    }
+    const n = Number(s.replace(',', '.'));
+    if (!Number.isFinite(n)) return { state: 'invalid', reason: 'Wert ist nicht endlich.' };
+    return { state: 'ok', value: n === 0 ? 0 : n };
+  }
+
+  function checkNumber(raw, label, rules, err, field) {
+    const r = parseNumber(raw);
+    if (r.state === 'missing') { err(field, label + ' fehlt.'); return undefined; }
+    if (r.state === 'invalid') { err(field, label + ': ' + r.reason); return undefined; }
+    const v = r.value;
+    if (rules.positive) {
+      if (!(v > 0)) { err(field, label + ' muss größer als 0 sein.'); return undefined; }
+    } else if (v < 0) { err(field, label + ' darf nicht negativ sein.'); return undefined; }
+    if (rules.min !== undefined && v < rules.min) { err(field, label + ' ist unplausibel klein (Minimum ' + numToPlain(rules.min) + ').'); return undefined; }
+    if (rules.max !== undefined && v > rules.max) { err(field, label + ' ist unplausibel groß (Maximum ' + numToPlain(rules.max) + ').'); return undefined; }
+    return v;
+  }
+
+  function approxEqual(a, b, rel) {
+    return Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b)) * rel + 1e-12;
+  }
+
+  /* Zahl ohne Exponentialschreibweise (exakte Dezimaldarstellung der kürzesten
+     JavaScript-Darstellung, verlustfrei wieder einlesbar). */
+  function numToPlain(n) {
+    if (typeof n !== 'number' || !Number.isFinite(n)) throw new Error('numToPlain: keine endliche Zahl');
+    const s = String(n);
+    if (!/e/i.test(s)) return s;
+    const parts = s.split(/e/i);
+    const exp = parseInt(parts[1], 10);
+    const neg = parts[0].charAt(0) === '-';
+    const mant = neg ? parts[0].slice(1) : parts[0];
+    const dot = mant.indexOf('.');
+    const intPart = dot === -1 ? mant : mant.slice(0, dot);
+    const fracPart = dot === -1 ? '' : mant.slice(dot + 1);
+    const digits = intPart + fracPart;
+    const pointPos = intPart.length + exp;
+    let out;
+    if (pointPos <= 0) out = '0.' + '0'.repeat(-pointPos) + digits;
+    else if (pointPos >= digits.length) out = digits + '0'.repeat(pointPos - digits.length);
+    else out = digits.slice(0, pointPos) + '.' + digits.slice(pointPos);
+    return (neg ? '-' : '') + out;
+  }
+
+  /* ---------------- Text ---------------- */
+  const CTRL_SINGLE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+  const CTRL_MULTI = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F\u2028\u2029]/; // \n erlaubt
+  const BIDI_CONTROL = /[\u202A-\u202E\u2066-\u2069]/;
+
+  function checkText(value, label, rules, err, field) {
+    if (value === undefined || value === null) {
+      if (rules.required) { err(field, label + ' fehlt.'); return undefined; }
+      return '';
+    }
+    if (typeof value !== 'string') { err(field, label + ' muss Text sein.'); return undefined; }
+    let s = value.replace(/\r\n?/g, '\n').trim();
+    if (typeof s.normalize === 'function') s = s.normalize('NFC');
+    if (s === '') {
+      if (rules.required) { err(field, label + ' darf nicht leer sein.'); return undefined; }
+      return '';
+    }
+    if (s.length > rules.max) { err(field, label + ' ist zu lang (max. ' + rules.max + ' Zeichen).'); return undefined; }
+    if ((rules.multiline ? CTRL_MULTI : CTRL_SINGLE).test(s) || BIDI_CONTROL.test(s)) {
+      err(field, label + ' enthält unzulässige Steuerzeichen.');
+      return undefined;
+    }
+    return s;
+  }
+
+  /* ---------------- Datum / Uhrzeit ---------------- */
+  function isLeapYear(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+  function daysInMonth(y, m) { return [31, isLeapYear(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]; }
+
+  function parseIsoDate(s) {
+    if (typeof s !== 'string') return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+    const y = +m[1], mo = +m[2], d = +m[3];
+    if (y < 1900 || y > 2999 || mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo)) return null;
+    return { y: y, m: mo, d: d };
+  }
+  /* akzeptiert JJJJ-MM-TT oder TT.MM.JJJJ; liefert JJJJ-MM-TT oder null */
+  function normalizeDate(value) {
+    if (typeof value !== 'string') return null;
+    const s = value.trim();
+    let iso = s;
+    const de = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s);
+    if (de) iso = de[3] + '-' + pad2(+de[2]) + '-' + pad2(+de[1]);
+    return parseIsoDate(iso) ? iso : null;
+  }
+  /* akzeptiert HH:MM oder HH:MM:SS; liefert HH:MM:SS oder null */
+  function normalizeTime(value) {
+    if (typeof value !== 'string') return null;
+    const m = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim());
+    if (!m) return null;
+    return m[1] + ':' + m[2] + ':' + (m[3] || '00');
+  }
+  function dateToDayNumber(s) { const p = parseIsoDate(s); return Date.UTC(p.y, p.m - 1, p.d) / 86400000; }
+  function dayNumberToDate(n) {
+    const d = new Date(n * 86400000);
+    return pad4(d.getUTCFullYear()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+  }
+  function addDays(s, n) { return dayNumberToDate(dateToDayNumber(s) + n); }
+  function daysBetween(a, b) { return dateToDayNumber(b) - dateToDayNumber(a); }
+  function localDateString(d) { return pad4(d.getFullYear()) + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function localTimeString(d) { return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()); }
+
+  /* ---------------- Haltefrist ----------------
+     Unverbindliche Rechenregel (keine Steuerberatung):
+     - Fristende = gleicher Kalendertag im Folgejahr (Rechnung analog § 188 Abs. 2 BGB).
+     - Existiert dieser Tag im Folgejahr nicht (Kauf am 29.02.), endet die Frist am
+       letzten Tag des Monats, also am 28.02. des Folgejahres (analog § 188 Abs. 3 BGB).
+     - "Rechnerisch länger als ein Jahr gehalten" gilt ab dem Tag NACH dem Fristende.
+     - Gezählt wird in Kalendertagen (UTC-basiert), Sommerzeitwechsel spielen keine Rolle. */
+  function holdingDeadline(buyDate) {
+    const p = parseIsoDate(buyDate);
+    const y = p.y + 1;
+    const d = Math.min(p.d, daysInMonth(y, p.m));
+    return pad4(y) + '-' + pad2(p.m) + '-' + pad2(d);
+  }
+  function holdingFreeFrom(buyDate) { return addDays(holdingDeadline(buyDate), 1); }
+  function holdingInfo(lot, today) {
+    const deadline = holdingDeadline(lot.date);
+    const freeFrom = addDays(deadline, 1);
+    let status, remainingDays;
+    if (!(lot.remaining > 0)) { status = 'sold'; remainingDays = null; }
+    else if (today >= freeFrom) { status = 'over1y'; remainingDays = 0; }
+    else { status = 'pending'; remainingDays = daysBetween(today, freeFrom); }
+    return { buyDate: lot.date, deadline: deadline, freeFrom: freeFrom, openQuantity: lot.remaining, status: status, remainingDays: remainingDays };
+  }
+
+  /* ---------------- Transaktion validieren ---------------- */
+  const TX_TYPES = ['buy', 'sell'];
+  const CURRENCIES = ['EUR', 'USD'];
+  const FEE_TYPES = ['amount', 'percent'];
+  const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+  const COIN_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,99}$/;
+
+  const FIELD_LABELS = Object.freeze({
+    id: 'ID', seq: 'Sequenznummer', type: 'Typ', coinId: 'Coin-ID', coinName: 'Coin-Name', symbol: 'Symbol',
+    quantity: 'Menge', inputPrice: 'Preis', inputCurrency: 'Eingabewährung', fxUsdPerEur: 'Wechselkurs USD je EUR',
+    priceEur: 'EUR-Preis', date: 'Datum', time: 'Uhrzeit', fee: 'Gebühr', feeType: 'Gebührenart',
+    exchange: 'Börse/Wallet', note: 'Notiz', transactions: 'Transaktionen', schemaVersion: 'Schema-Version'
+  });
+
+  function isValidFx(v) { return typeof v === 'number' && Number.isFinite(v) && v >= LIMITS.FX_MIN && v <= LIMITS.FX_MAX; }
+  function isValidApiPrice(v) { return typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= LIMITS.MAX_API_PRICE_EUR; }
+
+  /* Positivliste: nur die hier gelesenen Felder werden übernommen.
+     opts.today (JJJJ-MM-TT): Datum darf höchstens 1 Tag danach liegen.
+     opts.fxUsdPerEur: Wechselkurs für USD-Eingaben, falls raw keinen enthält. */
+  function validateTransaction(raw, opts) {
+    const o = opts || {};
+    const errors = [];
+    const err = (field, message) => { errors.push({ field: field, message: message }); };
+    if (!isPlainObject(raw)) return { ok: false, errors: [{ field: null, message: 'Eintrag ist kein Objekt.' }] };
+    const g = (k) => (hasOwn(raw, k) ? raw[k] : undefined);
+
+    const id = g('id');
+    if (typeof id !== 'string' || !ID_PATTERN.test(id)) err('id', 'ID fehlt oder ist ungültig (A–Z, a–z, 0–9, _ und -, max. 64 Zeichen).');
+    const seq = g('seq');
+    if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 1) err('seq', 'Sequenznummer fehlt oder ist ungültig (ganze Zahl ≥ 1).');
+    const type = g('type');
+    if (!TX_TYPES.includes(type)) err('type', 'Typ muss „buy“ (Kauf) oder „sell“ (Verkauf) sein.');
+
+    const coinId = checkText(g('coinId'), 'Coin-ID', { max: LIMITS.TEXT.coinId, required: true }, err, 'coinId');
+    if (coinId !== undefined && !COIN_ID_PATTERN.test(coinId)) err('coinId', 'Coin-ID darf nur Kleinbuchstaben, Ziffern, Punkt, Unterstrich und Bindestrich enthalten.');
+    const coinName = checkText(g('coinName'), 'Coin-Name', { max: LIMITS.TEXT.coinName, required: true }, err, 'coinName');
+    let symbol = checkText(g('symbol'), 'Symbol', { max: LIMITS.TEXT.symbol, required: true }, err, 'symbol');
+    if (symbol !== undefined) symbol = symbol.toUpperCase();
+
+    const quantity = checkNumber(g('quantity'), 'Menge', { positive: true, min: LIMITS.MIN_QUANTITY, max: LIMITS.MAX_QUANTITY }, err, 'quantity');
+    const inputPrice = checkNumber(g('inputPrice'), 'Preis', { max: LIMITS.MAX_PRICE }, err, 'inputPrice');
+
+    let currency = g('inputCurrency');
+    if (typeof currency === 'string') currency = currency.trim().toUpperCase();
+    const currencyOk = CURRENCIES.includes(currency);
+    if (!currencyOk) err('inputCurrency', 'Eingabewährung muss EUR oder USD sein.');
+
+    let fx = null;
+    if (currency === 'USD') {
+      const rf = parseNumber(g('fxUsdPerEur'));
+      if (rf.state === 'ok') fx = rf.value;
+      else if (rf.state === 'invalid') err('fxUsdPerEur', 'Wechselkurs USD je EUR: ' + rf.reason);
+      else if (o.fxUsdPerEur !== undefined && o.fxUsdPerEur !== null) fx = o.fxUsdPerEur;
+      else err('fxUsdPerEur', 'Für USD-Eingaben wird ein EUR/USD-Wechselkurs benötigt. Bitte Kurse aktualisieren oder in EUR erfassen.');
+      if (fx !== null && !isValidFx(fx)) {
+        err('fxUsdPerEur', 'Wechselkurs USD je EUR ist unplausibel (erlaubt ' + LIMITS.FX_MIN + ' bis ' + LIMITS.FX_MAX + ').');
+        fx = null;
+      }
+    }
+
+    let priceEur;
+    if (inputPrice !== undefined && currencyOk && (currency === 'EUR' || fx !== null)) {
+      const computed = currency === 'EUR' ? inputPrice : inputPrice / fx;
+      const rp = parseNumber(g('priceEur'));
+      if (rp.state === 'invalid') err('priceEur', 'EUR-Preis: ' + rp.reason);
+      else if (rp.state === 'ok') {
+        if (rp.value < 0) err('priceEur', 'EUR-Preis darf nicht negativ sein.');
+        else if (!approxEqual(rp.value, computed, 1e-6)) err('priceEur', 'EUR-Preis passt nicht zu Eingabepreis und Wechselkurs.');
+        else priceEur = rp.value;
+      } else priceEur = computed;
+      if (priceEur !== undefined && priceEur > LIMITS.MAX_PRICE) { err('priceEur', 'EUR-Preis ist unplausibel groß.'); priceEur = undefined; }
+    }
+
+    const rawDate = g('date');
+    const date = normalizeDate(rawDate);
+    if (!date) err('date', (rawDate === undefined || rawDate === null || rawDate === '') ? 'Datum fehlt.' : 'Datum ist ungültig (JJJJ-MM-TT).');
+    else if (date < LIMITS.MIN_DATE) err('date', 'Datum liegt vor dem ' + LIMITS.MIN_DATE + ' und ist unplausibel.');
+    else if (o.today && parseIsoDate(o.today) && daysBetween(o.today, date) > 1) err('date', 'Datum liegt in der Zukunft.');
+
+    const rawTime = g('time');
+    const time = normalizeTime(rawTime);
+    if (!time) err('time', (rawTime === undefined || rawTime === null || rawTime === '') ? 'Uhrzeit fehlt.' : 'Uhrzeit ist ungültig (HH:MM oder HH:MM:SS).');
+
+    const fee = checkNumber(g('fee'), 'Gebühr', { max: LIMITS.MAX_FEE_AMOUNT }, err, 'fee');
+    const feeType = g('feeType');
+    if (!FEE_TYPES.includes(feeType)) err('feeType', 'Gebührenart muss „amount“ (Betrag) oder „percent“ (Prozent) sein.');
+    else if (feeType === 'percent' && fee !== undefined && fee > LIMITS.MAX_FEE_PERCENT) {
+      err('fee', 'Prozentgebühr ist unplausibel hoch (max. ' + LIMITS.MAX_FEE_PERCENT + ' %).');
+    }
+
+    const exchange = checkText(g('exchange'), 'Börse/Wallet', { max: LIMITS.TEXT.exchange }, err, 'exchange');
+    const note = checkText(g('note'), 'Notiz', { max: LIMITS.TEXT.note, multiline: true }, err, 'note');
+
+    if (quantity !== undefined && priceEur !== undefined && quantity * priceEur > LIMITS.MAX_TX_VALUE_EUR) {
+      err('quantity', 'Handelswert (Menge × Preis) ist unplausibel groß.');
+    }
+
+    if (errors.length) return { ok: false, errors: errors };
+    const tx = Object.freeze({
+      id: id, seq: seq, type: type, coinId: coinId, coinName: coinName, symbol: symbol,
+      quantity: quantity, priceEur: priceEur, inputPrice: inputPrice, inputCurrency: currency,
+      fxUsdPerEur: currency === 'USD' ? fx : null, date: date, time: time,
+      fee: fee, feeType: feeType, exchange: exchange, note: note
+    });
+    return { ok: true, tx: tx, errors: [] };
+  }
+
+  function grossEurOf(tx) { return tx.quantity * tx.priceEur; }
+  function feeEurOf(tx) {
+    if (tx.feeType === 'percent') return grossEurOf(tx) * tx.fee / 100;
+    return tx.inputCurrency === 'USD' ? tx.fee / tx.fxUsdPerEur : tx.fee;
+  }
+
+  /* ---------------- FIFO ---------------- */
+  function compareTx(a, b) {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.time !== b.time) return a.time < b.time ? -1 : 1;
+    return a.seq - b.seq;
+  }
+
+  /* Erwartet validierte Transaktionen. Verändert die Eingaben nicht: sortiert eine
+     Kopie der Liste und arbeitet nur mit neu erzeugten Lot-Objekten. */
+  function computeFifo(transactions) {
+    const list = Array.isArray(transactions) ? transactions.slice() : [];
+    list.sort(compareTx);
+    const coins = new Map();
+    const lots = [];
+    const sales = [];
+    const errors = [];
+
+    for (const tx of list) {
+      let c = coins.get(tx.coinId);
+      if (!c) {
+        c = { coinId: tx.coinId, coinName: tx.coinName, symbol: tx.symbol, queue: [], boughtQuantity: 0, soldQuantity: 0,
+          investedEur: 0, realizedProceedsEur: 0, realizedCostEur: 0, realizedGainEur: 0, feesEur: 0, txCount: 0 };
+        coins.set(tx.coinId, c);
+      }
+      c.coinName = tx.coinName; c.symbol = tx.symbol; c.txCount++;
+      const grossEur = grossEurOf(tx);
+      const feeEur = feeEurOf(tx);
+
+      if (tx.type === 'buy') {
+        const costEur = grossEur + feeEur;
+        const lot = { txId: tx.id, coinId: tx.coinId, coinName: tx.coinName, symbol: tx.symbol, date: tx.date, time: tx.time,
+          seq: tx.seq, quantity: tx.quantity, remaining: tx.quantity, soldQuantity: 0, grossEur: grossEur, feeEur: feeEur,
+          costEur: costEur, unitCostEur: costEur / tx.quantity, exchange: tx.exchange };
+        lots.push(lot);
+        c.queue.push(lot);
+        c.boughtQuantity += tx.quantity;
+        c.investedEur += costEur;
+        c.feesEur += feeEur;
+        continue;
+      }
+
+      // Verkauf: nur der Bestand zu DIESEM Zeitpunkt zählt (spätere Käufe sind noch nicht in der Queue).
+      let available = 0;
+      for (const l of c.queue) available += l.remaining;
+      const tol = qtyTolerance(available, tx.quantity);
+      if (tx.quantity > available + tol) {
+        const noStock = available <= tol;
+        errors.push({ txId: tx.id, coinId: tx.coinId, code: noStock ? 'NO_HOLDINGS' : 'OVERSELL', available: available, requested: tx.quantity,
+          message: 'Verkauf vom ' + tx.date + ' ' + tx.time + ' (' + tx.symbol + '): ' + (noStock
+            ? 'Zu diesem Zeitpunkt ist kein Bestand vorhanden (Verkauf vor Kauf?).'
+            : 'Menge ' + numToPlain(tx.quantity) + ' übersteigt den zu diesem Zeitpunkt verfügbaren Bestand von ' + numToPlain(available) + '.') });
+        continue;
+      }
+
+      const netEur = grossEur - feeEur;
+      const parts = [];
+      let rest = tx.quantity;
+      while (c.queue.length > 0 && rest > tol) {
+        const lot = c.queue[0];
+        let take = Math.min(lot.remaining, rest);
+        // Restmenge innerhalb der Toleranz: Lot vollständig schließen.
+        if (lot.remaining - take <= qtyTolerance(lot.quantity, take)) take = lot.remaining;
+        const costPart = lot.costEur * (take / lot.quantity);
+        parts.push({ lot: lot, take: take, costPart: costPart });
+        lot.remaining -= take;
+        lot.soldQuantity += take;
+        if (lot.remaining <= qtyTolerance(lot.quantity, 0)) { lot.remaining = 0; c.queue.shift(); }
+        rest -= take;
+        if (rest < 0) rest = 0;
+      }
+      let totalTaken = 0;
+      for (const p of parts) totalTaken += p.take;
+      let costEur = 0;
+      const allocations = parts.map((p) => {
+        const proceedsEur = totalTaken > 0 ? netEur * (p.take / totalTaken) : 0;
+        costEur += p.costPart;
+        const freeFrom = holdingFreeFrom(p.lot.date);
+        return Object.freeze({ lotTxId: p.lot.txId, buyDate: p.lot.date, buyTime: p.lot.time, quantity: p.take,
+          costEur: p.costPart, proceedsEur: proceedsEur, gainEur: proceedsEur - p.costPart,
+          holdingDays: daysBetween(p.lot.date, tx.date), overOneYear: tx.date >= freeFrom });
+      });
+      const sale = Object.freeze({ txId: tx.id, coinId: tx.coinId, coinName: tx.coinName, symbol: tx.symbol, date: tx.date, time: tx.time,
+        quantity: tx.quantity, grossEur: grossEur, feeEur: feeEur, netEur: netEur, costEur: costEur, gainEur: netEur - costEur,
+        allocations: Object.freeze(allocations) });
+      sales.push(sale);
+      c.soldQuantity += tx.quantity;
+      c.realizedProceedsEur += netEur;
+      c.realizedCostEur += costEur;
+      c.realizedGainEur += netEur - costEur;
+      c.feesEur += feeEur;
+    }
+
+    const coinList = [];
+    const coinMap = Object.create(null);
+    for (const c of coins.values()) {
+      let openQuantity = 0, openCostEur = 0, openLots = 0;
+      for (const l of c.queue) {
+        if (l.remaining > 0) { openQuantity += l.remaining; openCostEur += l.costEur * (l.remaining / l.quantity); openLots++; }
+      }
+      const out = Object.freeze({ coinId: c.coinId, coinName: c.coinName, symbol: c.symbol, openQuantity: openQuantity,
+        openCostEur: openCostEur, openLots: openLots, boughtQuantity: c.boughtQuantity, soldQuantity: c.soldQuantity,
+        investedEur: c.investedEur, realizedProceedsEur: c.realizedProceedsEur, realizedCostEur: c.realizedCostEur,
+        realizedGainEur: c.realizedGainEur, feesEur: c.feesEur, txCount: c.txCount });
+      coinList.push(out);
+      coinMap[c.coinId] = out;
+    }
+    const lotsOut = lots.map((l) => Object.freeze({ txId: l.txId, coinId: l.coinId, coinName: l.coinName, symbol: l.symbol,
+      date: l.date, time: l.time, seq: l.seq, quantity: l.quantity, remaining: l.remaining, soldQuantity: l.soldQuantity,
+      grossEur: l.grossEur, feeEur: l.feeEur, costEur: l.costEur, unitCostEur: l.unitCostEur,
+      openCostEur: l.costEur * (l.remaining / l.quantity), exchange: l.exchange, closed: l.remaining === 0 }));
+
+    return { ok: errors.length === 0, errors: errors, lots: lotsOut, sales: sales, coins: coinList, coinMap: coinMap };
+  }
+
+  /* ---------------- Transaktionsliste (gesamte zeitliche Folge) ---------------- */
+  function validateTransactionList(list, opts) {
+    const o = opts || {};
+    const errors = [];
+    if (!Array.isArray(list)) return { ok: false, errors: [{ index: null, field: 'transactions', message: '„transactions“ muss eine Liste sein.' }], transactions: [] };
+    if (list.length > LIMITS.MAX_TRANSACTIONS) {
+      return { ok: false, errors: [{ index: null, field: 'transactions', message: 'Zu viele Transaktionen (' + list.length + ', max. ' + LIMITS.MAX_TRANSACTIONS + ').' }], transactions: [] };
+    }
+    const txs = [];
+    for (let i = 0; i < list.length; i++) {
+      const r = validateTransaction(list[i], o);
+      if (r.ok) txs.push(r.tx);
+      else r.errors.forEach((e) => errors.push({ index: i, field: e.field, message: e.message }));
+    }
+    if (errors.length) return { ok: false, errors: errors, transactions: [] };
+    const ids = new Map();
+    const seqs = new Map();
+    txs.forEach((t, i) => {
+      if (ids.has(t.id)) errors.push({ index: i, field: 'id', message: 'ID „' + t.id + '“ kommt doppelt vor (auch bei Transaktion #' + (ids.get(t.id) + 1) + ').' });
+      else ids.set(t.id, i);
+      if (seqs.has(t.seq)) errors.push({ index: i, field: 'seq', message: 'Sequenznummer ' + t.seq + ' kommt doppelt vor (auch bei Transaktion #' + (seqs.get(t.seq) + 1) + ').' });
+      else seqs.set(t.seq, i);
+    });
+    if (errors.length) return { ok: false, errors: errors, transactions: [] };
+    const fifo = computeFifo(txs);
+    if (!fifo.ok) {
+      fifo.errors.forEach((e) => errors.push({ index: ids.get(e.txId), field: 'quantity', message: e.message }));
+      return { ok: false, errors: errors, transactions: [], fifo: fifo };
+    }
+    return { ok: true, errors: [], transactions: txs, fifo: fifo };
+  }
+
+  function formatListError(e) {
+    const where = (e.index === null || e.index === undefined) ? '' : 'Transaktion #' + (e.index + 1) + (e.field ? ', Feld „' + (FIELD_LABELS[e.field] || e.field) + '“' : '') + ': ';
+    const line = (e.line !== undefined && e.line !== null) ? 'CSV-Zeile ' + e.line + (e.field ? ', Spalte „' + e.field + '“' : '') + ': ' : '';
+    return (line || where) + e.message;
+  }
+
+  /* ---------------- JSON / Schema / Migration ---------------- */
+  function safeJsonParse(text) {
+    if (typeof text !== 'string') return { ok: false, error: 'Kein Text.' };
+    try { return { ok: true, value: JSON.parse(text) }; }
+    catch (e) { return { ok: false, error: (e && e.message) ? String(e.message).slice(0, 200) : 'Syntaxfehler.' }; }
+  }
+
+  function normalizeLegacyType(v) {
+    if (typeof v !== 'string') return v;
+    const s = v.trim().toLowerCase();
+    if (s === 'kauf' || s === 'buy') return 'buy';
+    if (s === 'verkauf' || s === 'sell') return 'sell';
+    return v;
+  }
+
+  /* Migration Schema 0 (unversioniertes Altformat: Liste oder { transactions: [...] })
+     -> Schema 1. Nur ausdrücklich genannte Feldnamen werden gelesen (Positivliste).
+     Dokumentierte Standardwerte für Altdaten: fehlende Uhrzeit = 00:00:00,
+     fehlende Gebühr = 0 als Betrag, fehlende Währung = EUR, fehlende ID = legacy-<n>.
+     Die Sequenznummer entspricht der Reihenfolge in der Altdatei. */
+  function migrateV0Transaction(r, i) {
+    if (!isPlainObject(r)) return r;
+    const pick = function () { for (let k = 0; k < arguments.length; k++) { if (hasOwn(r, arguments[k])) return r[arguments[k]]; } return undefined; };
+    let id = pick('id');
+    if (typeof id === 'number' && Number.isSafeInteger(id)) id = String(id);
+    if (typeof id !== 'string' || !ID_PATTERN.test(id)) id = 'legacy-' + (i + 1);
+    let date = pick('date', 'datum');
+    let time = pick('time', 'uhrzeit');
+    if (typeof date === 'string') {
+      const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/.exec(date.trim());
+      if (m) { date = m[1]; if (time === undefined) time = m[2]; }
+    }
+    if (time === undefined || time === null || time === '') time = '00:00:00';
+    const coinId = pick('coinId', 'coin_id', 'coin');
+    let fee = pick('fee', 'gebuehr');
+    if (fee === undefined || fee === null) fee = 0;
+    let feeType = pick('feeType');
+    if (feeType === undefined || feeType === null) feeType = 'amount';
+    let currency = pick('inputCurrency', 'currency', 'waehrung');
+    if (currency === undefined || currency === null) currency = 'EUR';
+    let name = pick('coinName', 'coin_name', 'name');
+    if (name === undefined || name === null) name = coinId;
+    return {
+      id: id, seq: i + 1, type: normalizeLegacyType(pick('type', 'typ')), coinId: typeof coinId === 'string' ? coinId.trim().toLowerCase() : coinId,
+      coinName: name, symbol: pick('symbol'), quantity: pick('quantity', 'amount', 'menge'),
+      inputPrice: pick('inputPrice', 'price', 'preis', 'priceEur'), inputCurrency: currency,
+      fxUsdPerEur: pick('fxUsdPerEur'), priceEur: pick('priceEur'), date: date, time: time,
+      fee: fee, feeType: feeType, exchange: pick('exchange', 'boerse', 'wallet'), note: pick('note', 'notiz', 'notes')
+    };
+  }
+
+  /* Prüft gespeicherte Daten oder ein JSON-Backup (bereits geparst).
+     Liefert { ok, state: { schemaVersion, nextSeq, transactions }, fifo, migratedFrom, errors }. */
+  function parseStoredState(raw, opts) {
+    const o = opts || {};
+    const fail = (message, field) => ({ ok: false, errors: [{ index: null, field: field || null, message: message }] });
+    let version, list, nextSeqRaw;
+    if (Array.isArray(raw)) { version = 0; list = raw; }
+    else if (isPlainObject(raw)) {
+      if (!hasOwn(raw, 'schemaVersion')) {
+        if (!Array.isArray(raw.transactions)) return fail('Unbekanntes Datenformat: „transactions“ fehlt.', 'transactions');
+        version = 0; list = raw.transactions;
+      } else if (raw.schemaVersion === 1) {
+        version = 1; list = raw.transactions; nextSeqRaw = raw.nextSeq;
+        if (hasOwn(raw, 'app') && raw.app !== APP_ID) return fail('Datei stammt nicht aus dieser App (Feld „app“).', 'app');
+      } else {
+        const shown = typeof raw.schemaVersion === 'number' || typeof raw.schemaVersion === 'string' ? String(raw.schemaVersion).slice(0, 20) : typeof raw.schemaVersion;
+        return fail('Nicht unterstützte Schema-Version „' + shown + '“. Unterstützt: 0 (Altformat) und ' + SCHEMA_VERSION + '.', 'schemaVersion');
+      }
+    } else return fail('Unbekanntes Datenformat (weder Liste noch Objekt).');
+    if (!Array.isArray(list)) return fail('„transactions“ muss eine Liste sein.', 'transactions');
+    if (list.length > LIMITS.MAX_TRANSACTIONS) return fail('Zu viele Transaktionen (' + list.length + ', max. ' + LIMITS.MAX_TRANSACTIONS + ').', 'transactions');
+    const candidates = version === 0 ? list.map(migrateV0Transaction) : list;
+    const res = validateTransactionList(candidates, o);
+    if (!res.ok) return { ok: false, errors: res.errors };
+    let maxSeq = 0;
+    for (const t of res.transactions) if (t.seq > maxSeq) maxSeq = t.seq;
+    let nextSeq = maxSeq + 1;
+    if (typeof nextSeqRaw === 'number' && Number.isSafeInteger(nextSeqRaw) && nextSeqRaw > maxSeq) nextSeq = nextSeqRaw;
+    return { ok: true, errors: [], migratedFrom: version, fifo: res.fifo,
+      state: { schemaVersion: SCHEMA_VERSION, nextSeq: nextSeq, transactions: res.transactions } };
+  }
+
+  function buildStatePayload(transactions, nextSeq) {
+    return { app: APP_ID, schemaVersion: SCHEMA_VERSION, nextSeq: nextSeq, transactions: transactions };
+  }
+
+  function summarizeTransactions(txs) {
+    const coins = new Set();
+    let buys = 0, sells = 0, first = null, last = null;
+    for (const t of txs) {
+      coins.add(t.symbol);
+      if (t.type === 'buy') buys++; else sells++;
+      if (first === null || t.date < first) first = t.date;
+      if (last === null || t.date > last) last = t.date;
+    }
+    return { count: txs.length, buys: buys, sells: sells, coins: Array.from(coins).sort(), firstDate: first, lastDate: last };
+  }
+
+  /* Vollständiger JSON-Import in einen temporären Zustand. Bestehende Daten werden hier nie berührt. */
+  function prepareJsonImport(text, opts) {
+    const o = opts || {};
+    if (typeof text !== 'string') return { ok: false, errors: [{ index: null, field: null, message: 'Datei konnte nicht gelesen werden.' }] };
+    if (text.length > LIMITS.MAX_IMPORT_BYTES) return { ok: false, errors: [{ index: null, field: null, message: 'Datei ist zu groß (max. 5 MB).' }] };
+    const parsed = safeJsonParse(text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text);
+    if (!parsed.ok) return { ok: false, errors: [{ index: null, field: null, message: 'Datei ist kein gültiges JSON: ' + parsed.error }] };
+    const st = parseStoredState(parsed.value, { today: o.today });
+    if (!st.ok) return st;
+    let snapshots = null;
+    if (isPlainObject(parsed.value) && hasOwn(parsed.value, 'snapshots')) {
+      const sv = validateSnapshots(parsed.value.snapshots);
+      if (!sv.ok) return { ok: false, errors: sv.errors.map((m) => ({ index: null, field: 'snapshots', message: 'Portfolio-Verlauf: ' + m })) };
+      snapshots = sv.snapshots;
+    }
+    return { ok: true, errors: [], state: st.state, fifo: st.fifo, snapshots: snapshots, migratedFrom: st.migratedFrom,
+      summary: summarizeTransactions(st.state.transactions) };
+  }
+
+  /* ---------------- CSV ---------------- */
+  const CSV_COLUMNS = ['id', 'typ', 'coin_id', 'coin_name', 'symbol', 'menge', 'preis', 'waehrung', 'preis_eur',
+    'wechselkurs_usd_je_eur', 'datum', 'uhrzeit', 'gebuehr', 'gebuehrenart', 'boerse_wallet', 'notiz'];
+  const CSV_REQUIRED = ['typ', 'coin_id', 'symbol', 'menge', 'preis', 'waehrung', 'datum', 'uhrzeit'];
+  const CSV_FIELD_FOR = { type: 'typ', coinId: 'coin_id', coinName: 'coin_name', symbol: 'symbol', quantity: 'menge',
+    inputPrice: 'preis', inputCurrency: 'waehrung', priceEur: 'preis_eur', fxUsdPerEur: 'wechselkurs_usd_je_eur',
+    date: 'datum', time: 'uhrzeit', fee: 'gebuehr', feeType: 'gebuehrenart', exchange: 'boerse_wallet', note: 'notiz' };
+  const FORMULA_START = /^[=+\-@\t\r]/;
+
+  /* RFC-4180-ähnlicher Parser: Semikolon, doppelte Anführungszeichen ("" = "),
+     Semikolons und Zeilenumbrüche in zitierten Feldern. Meldet Zeilennummern. */
+  function parseCsv(text, delimiter) {
+    const d = delimiter || ';';
+    if (typeof text !== 'string') return { ok: false, error: { line: null, message: 'Kein Text.' } };
+    let s = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+    const rows = [];
+    let row = [], field = '', inQuotes = false, wasQuoted = false, afterQuote = false;
+    let line = 1, rowStart = 1, i = 0;
+    const endRow = () => {
+      row.push(field);
+      rows.push({ line: rowStart, fields: row });
+      row = []; field = ''; wasQuoted = false; afterQuote = false;
+    };
+    while (i < s.length) {
+      const c = s[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (s[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQuotes = false; afterQuote = true; i++; continue;
+        }
+        if (c === '\r') { field += '\n'; line++; i += (s[i + 1] === '\n') ? 2 : 1; continue; }
+        if (c === '\n') { field += '\n'; line++; i++; continue; }
+        field += c; i++; continue;
+      }
+      if (c === d) { row.push(field); field = ''; wasQuoted = false; afterQuote = false; i++; continue; }
+      if (c === '\r' || c === '\n') {
+        endRow();
+        i += (c === '\r' && s[i + 1] === '\n') ? 2 : 1;
+        line++; rowStart = line;
+        if (rows.length > LIMITS.MAX_CSV_ROWS + 1) return { ok: false, error: { line: line, message: 'Zu viele Zeilen (max. ' + LIMITS.MAX_CSV_ROWS + ' Datenzeilen).' } };
+        continue;
+      }
+      if (afterQuote) return { ok: false, error: { line: line, message: 'Unerwartetes Zeichen nach schließendem Anführungszeichen.' } };
+      if (c === '"') {
+        if (field === '' && !wasQuoted) { inQuotes = true; wasQuoted = true; i++; continue; }
+        return { ok: false, error: { line: line, message: 'Anführungszeichen innerhalb eines nicht zitierten Feldes.' } };
+      }
+      field += c; i++;
+    }
+    if (inQuotes) return { ok: false, error: { line: rowStart, message: 'Nicht geschlossenes Anführungszeichen (Feld beginnt in Zeile ' + rowStart + ').' } };
+    if (field !== '' || row.length > 0 || wasQuoted) endRow();
+    const filtered = rows.filter((r) => !(r.fields.length === 1 && r.fields[0].trim() === ''));
+    if (filtered.length > LIMITS.MAX_CSV_ROWS + 1) return { ok: false, error: { line: null, message: 'Zu viele Zeilen (max. ' + LIMITS.MAX_CSV_ROWS + ' Datenzeilen).' } };
+    return { ok: true, rows: filtered };
+  }
+
+  function neutralizeCsvText(s) { return FORMULA_START.test(s) ? "'" + s : s; }
+  function unneutralizeCsvText(s) { return (typeof s === 'string' && /^'[=+\-@\t\r]/.test(s)) ? s.slice(1) : s; }
+  function csvQuote(s) { return (/[;"\r\n]/.test(s) || /^\s|\s$/.test(s)) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function csvText(v) { return csvQuote(neutralizeCsvText(v === null || v === undefined ? '' : String(v))); }
+  function csvNumber(n) { return (n === null || n === undefined) ? '' : numToPlain(n).replace('.', ','); }
+
+  function transactionsToCsv(transactions) {
+    const txs = transactions.slice().sort(compareTx);
+    const lines = [CSV_COLUMNS.join(';')];
+    for (const t of txs) {
+      lines.push([
+        csvText(t.id), csvText(t.type === 'buy' ? 'kauf' : 'verkauf'), csvText(t.coinId), csvText(t.coinName), csvText(t.symbol),
+        csvNumber(t.quantity), csvNumber(t.inputPrice), csvText(t.inputCurrency), csvNumber(t.priceEur),
+        csvNumber(t.inputCurrency === 'USD' ? t.fxUsdPerEur : null), csvText(t.date), csvText(t.time),
+        csvNumber(t.fee), csvText(t.feeType === 'percent' ? 'prozent' : 'betrag'), csvText(t.exchange), csvText(t.note)
+      ].join(';'));
+    }
+    return '\uFEFF' + lines.join('\r\n') + '\r\n';
+  }
+
+  function mapFeeType(v) {
+    if (typeof v !== 'string') return v;
+    const s = v.trim().toLowerCase();
+    if (s === 'betrag' || s === 'amount') return 'amount';
+    if (s === 'prozent' || s === 'percent' || s === '%') return 'percent';
+    return v;
+  }
+
+  /* CSV-Import in temporären Zustand. Kein stiller Teilimport: bei einem Fehler
+     wird nichts übernommen. opts: { existing, mode: 'append'|'replace', today,
+     fxUsdPerEur, startSeq, idFactory } */
+  function prepareCsvImport(text, opts) {
+    const o = opts || {};
+    const existing = Array.isArray(o.existing) ? o.existing : [];
+    const mode = o.mode === 'replace' ? 'replace' : 'append';
+    const fail = (errors) => ({ ok: false, errors: errors, notices: [] });
+    if (typeof text !== 'string') return fail([{ line: null, message: 'Datei konnte nicht gelesen werden.' }]);
+    if (text.length > LIMITS.MAX_IMPORT_BYTES) return fail([{ line: null, message: 'Datei ist zu groß (max. 5 MB).' }]);
+    if (typeof o.idFactory !== 'function') return fail([{ line: null, message: 'Interner Fehler: keine ID-Erzeugung.' }]);
+    const parsed = parseCsv(text, ';');
+    if (!parsed.ok) return fail([parsed.error]);
+    if (parsed.rows.length === 0) return fail([{ line: null, message: 'CSV-Datei ist leer.' }]);
+    const header = parsed.rows[0].fields.map((h) => h.trim().toLowerCase());
+    const notices = [];
+    const seen = new Set();
+    const errors = [];
+    header.forEach((h) => {
+      if (seen.has(h)) errors.push({ line: 1, message: 'Spalte „' + h + '“ kommt doppelt vor.' });
+      seen.add(h);
+    });
+    const missing = CSV_REQUIRED.filter((c) => !seen.has(c));
+    if (missing.length) errors.push({ line: 1, message: 'Pflichtspalten fehlen: ' + missing.join(', ') + '.' });
+    if (errors.length) return fail(errors);
+    const unknown = header.filter((h) => !CSV_COLUMNS.includes(h));
+    if (unknown.length) notices.push('Unbekannte Spalten werden ignoriert: ' + unknown.slice(0, 10).join(', ') + '.');
+    if (!seen.has('gebuehr')) notices.push('Spalte „gebuehr“ fehlt: Alle Gebühren werden als 0 übernommen.');
+    if (!seen.has('coin_name')) notices.push('Spalte „coin_name“ fehlt: Die Coin-ID wird als Name verwendet.');
+    if (seen.has('id')) notices.push('Beim Import werden neue IDs vergeben (Spalte „id“ wird nicht übernommen).');
+    const col = Object.create(null);
+    header.forEach((h, idx) => { col[h] = idx; });
+    const dataRows = parsed.rows.slice(1);
+    if (dataRows.length === 0) return fail([{ line: null, message: 'Die CSV-Datei enthält keine Datenzeilen.' }]);
+    if (dataRows.length > LIMITS.MAX_CSV_ROWS) return fail([{ line: null, message: 'Zu viele Datenzeilen (max. ' + LIMITS.MAX_CSV_ROWS + ').' }]);
+    const startSeq = (typeof o.startSeq === 'number' && Number.isSafeInteger(o.startSeq) && o.startSeq >= 1) ? o.startSeq : 1;
+    const newTxs = [];
+    const lineOfId = new Map();
+    dataRows.forEach((r, k) => {
+      if (r.fields.length !== header.length) {
+        errors.push({ line: r.line, message: 'Spaltenanzahl ' + r.fields.length + ' statt ' + header.length + '.' });
+        return;
+      }
+      const cell = (name) => (name in col ? r.fields[col[name]] : undefined);
+      const text = (name) => { const v = cell(name); return v === undefined ? undefined : unneutralizeCsvText(v); };
+      const coinIdRaw = text('coin_id');
+      const coinId = typeof coinIdRaw === 'string' ? coinIdRaw.trim().toLowerCase() : coinIdRaw;
+      const raw = {
+        id: o.idFactory(), seq: startSeq + k, type: normalizeLegacyType(text('typ')), coinId: coinId,
+        coinName: seen.has('coin_name') ? text('coin_name') : coinId, symbol: text('symbol'),
+        quantity: cell('menge'), inputPrice: cell('preis'), inputCurrency: text('waehrung'),
+        priceEur: cell('preis_eur'), fxUsdPerEur: cell('wechselkurs_usd_je_eur'),
+        date: normalizeDate(text('datum') || '') || text('datum'), time: text('uhrzeit'),
+        fee: seen.has('gebuehr') ? cell('gebuehr') : 0,
+        feeType: seen.has('gebuehrenart') ? mapFeeType(text('gebuehrenart')) : 'amount',
+        exchange: text('boerse_wallet'), note: text('notiz')
+      };
+      const v = validateTransaction(raw, { today: o.today, fxUsdPerEur: o.fxUsdPerEur });
+      if (!v.ok) {
+        v.errors.forEach((e) => errors.push({ line: r.line, field: CSV_FIELD_FOR[e.field] || e.field, message: e.message }));
+        return;
+      }
+      lineOfId.set(v.tx.id, r.line);
+      newTxs.push(v.tx);
+    });
+    if (errors.length) return fail(errors);
+    const base = mode === 'append' ? existing : [];
+    const combined = base.concat(newTxs);
+    if (combined.length > LIMITS.MAX_TRANSACTIONS) return fail([{ line: null, message: 'Zusammen wären es zu viele Transaktionen (max. ' + LIMITS.MAX_TRANSACTIONS + ').' }]);
+    const lv = validateTransactionList(combined, {});
+    if (!lv.ok) {
+      return fail(lv.errors.map((e) => {
+        const t = (e.index !== null && e.index !== undefined) ? combined[e.index] : null;
+        if (t && lineOfId.has(t.id)) return { line: lineOfId.get(t.id), field: null, message: e.message };
+        return { line: null, field: null, message: (t ? 'Bestehende Transaktion vom ' + t.date + ': ' : '') + e.message };
+      }));
+    }
+    return { ok: true, errors: [], notices: notices, transactions: lv.transactions, fifo: lv.fifo, added: newTxs.length,
+      mode: mode, summary: summarizeTransactions(newTxs) };
+  }
+
+  /* ---------------- API-Antworten ---------------- */
+  function validateSimplePriceResponse(json, ids) {
+    const prices = Object.create(null);
+    const invalid = [];
+    const list = Array.isArray(ids) ? ids : [];
+    if (!isPlainObject(json)) return { ok: false, prices: prices, invalid: list.slice(), error: 'Kursantwort hat eine unerwartete Struktur.' };
+    for (const id of list) {
+      const entry = hasOwn(json, id) ? json[id] : undefined;
+      const eur = isPlainObject(entry) && hasOwn(entry, 'eur') ? entry.eur : undefined;
+      if (isValidApiPrice(eur)) prices[id] = eur; else invalid.push(id);
+    }
+    return { ok: true, prices: prices, invalid: invalid };
+  }
+
+  function validateExchangeRatesResponse(json) {
+    const rates = isPlainObject(json) && isPlainObject(json.rates) ? json.rates : null;
+    const eur = rates && isPlainObject(rates.eur) ? rates.eur.value : undefined;
+    const usd = rates && isPlainObject(rates.usd) ? rates.usd.value : undefined;
+    const okNum = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+    if (!okNum(eur) || !okNum(usd)) return { ok: false, error: 'Wechselkursantwort enthält keine gültigen EUR/USD-Werte.' };
+    const usdPerEur = usd / eur;
+    if (!isValidFx(usdPerEur)) return { ok: false, error: 'EUR/USD-Wechselkurs ist unplausibel.' };
+    return { ok: true, usdPerEur: usdPerEur };
+  }
+
+  function validateSearchResponse(json) {
+    if (!isPlainObject(json) || !Array.isArray(json.coins)) return { ok: false, coins: [], error: 'Suchantwort hat eine unerwartete Struktur.' };
+    const out = [];
+    for (const c of json.coins) {
+      if (out.length >= LIMITS.MAX_SEARCH_RESULTS) break;
+      if (!isPlainObject(c)) continue;
+      const noop = () => {};
+      const id = checkText(c.id, 'id', { max: LIMITS.TEXT.coinId, required: true }, noop, 'id');
+      const name = checkText(c.name, 'name', { max: LIMITS.TEXT.coinName, required: true }, noop, 'name');
+      const symbol = checkText(c.symbol, 'symbol', { max: LIMITS.TEXT.symbol, required: true }, noop, 'symbol');
+      if (!id || !name || !symbol || !COIN_ID_PATTERN.test(id)) continue;
+      out.push(Object.freeze({ id: id, name: name, symbol: symbol.toUpperCase() }));
+    }
+    return { ok: true, coins: out };
+  }
+
+  function isValidTimestamp(v, nowMs) {
+    return typeof v === 'number' && Number.isFinite(v) && v >= Date.UTC(2009, 0, 3) && v <= (nowMs || Date.now()) + 86400000;
+  }
+
+  /* Kurs-Cache: Coin-Kurse und EUR/USD-Wechselkurs getrennt. */
+  function validatePriceCache(raw, nowMs) {
+    const out = { coins: Object.create(null), fx: null, lastSuccessAt: null };
+    if (!isPlainObject(raw) || raw.schemaVersion !== 1) return { ok: false, cache: out };
+    if (isPlainObject(raw.coins)) {
+      const keys = Object.keys(raw.coins).slice(0, LIMITS.MAX_PRICE_CACHE_ENTRIES);
+      for (const id of keys) {
+        if (!COIN_ID_PATTERN.test(id)) continue;
+        const e = raw.coins[id];
+        if (isPlainObject(e) && isValidApiPrice(e.eur) && isValidTimestamp(e.updatedAt, nowMs)) out.coins[id] = { eur: e.eur, updatedAt: e.updatedAt };
+      }
+    }
+    if (isPlainObject(raw.fx) && isValidFx(raw.fx.usdPerEur) && isValidTimestamp(raw.fx.updatedAt, nowMs)) {
+      out.fx = { usdPerEur: raw.fx.usdPerEur, updatedAt: raw.fx.updatedAt };
+    }
+    if (isValidTimestamp(raw.lastSuccessAt, nowMs)) out.lastSuccessAt = raw.lastSuccessAt;
+    return { ok: true, cache: out };
+  }
+
+  /* ---------------- Portfoliowert und Snapshots ---------------- */
+  function computePortfolioValue(fifo, priceCoins) {
+    let valueEur = 0, costEur = 0;
+    const missing = [];
+    const positions = [];
+    for (const c of fifo.coins) {
+      if (!(c.openQuantity > 0)) continue;
+      costEur += c.openCostEur;
+      const p = priceCoins && hasOwn(priceCoins, c.coinId) ? priceCoins[c.coinId] : null;
+      const price = p && isValidApiPrice(p.eur) ? p.eur : null;
+      if (price === null) {
+        missing.push(c.coinId);
+        positions.push({ coin: c, priceEur: null, valueEur: null, unrealizedEur: null, updatedAt: null });
+        continue;
+      }
+      const v = c.openQuantity * price;
+      valueEur += v;
+      positions.push({ coin: c, priceEur: price, valueEur: v, unrealizedEur: v - c.openCostEur, updatedAt: p.updatedAt });
+    }
+    return { complete: missing.length === 0, valueEur: missing.length ? null : valueEur, partialValueEur: valueEur,
+      costEur: costEur, missing: missing, positions: positions };
+  }
+
+  function validateSnapshot(s) {
+    if (!isPlainObject(s)) return 'Eintrag ist kein Objekt.';
+    if (!parseIsoDate(s.date)) return 'Datum ungültig.';
+    if (typeof s.valueEur !== 'number' || !Number.isFinite(s.valueEur) || s.valueEur < 0 || s.valueEur > LIMITS.MAX_SNAPSHOT_VALUE_EUR) return 'Wert ungültig (' + s.date + ').';
+    if (typeof s.costEur !== 'number' || !Number.isFinite(s.costEur) || s.costEur < 0 || s.costEur > LIMITS.MAX_SNAPSHOT_VALUE_EUR) return 'Kostenbasis ungültig (' + s.date + ').';
+    if (s.usdPerEur !== null && s.usdPerEur !== undefined && !isValidFx(s.usdPerEur)) return 'Wechselkurs ungültig (' + s.date + ').';
+    return null;
+  }
+  function cleanSnapshot(s) {
+    return Object.freeze({ date: s.date, valueEur: s.valueEur, costEur: s.costEur, usdPerEur: isValidFx(s.usdPerEur) ? s.usdPerEur : null });
+  }
+  function validateSnapshots(list) {
+    if (!Array.isArray(list)) return { ok: false, errors: ['Verlauf muss eine Liste sein.'], snapshots: [] };
+    if (list.length > LIMITS.MAX_SNAPSHOTS) return { ok: false, errors: ['Zu viele Verlaufseinträge.'], snapshots: [] };
+    const errors = [];
+    const dates = new Set();
+    const out = [];
+    list.forEach((s, i) => {
+      const e = validateSnapshot(s);
+      if (e) { errors.push('Eintrag #' + (i + 1) + ': ' + e); return; }
+      if (dates.has(s.date)) { errors.push('Eintrag #' + (i + 1) + ': Datum ' + s.date + ' doppelt.'); return; }
+      dates.add(s.date);
+      out.push(cleanSnapshot(s));
+    });
+    if (errors.length) return { ok: false, errors: errors, snapshots: [] };
+    out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { ok: true, errors: [], snapshots: out };
+  }
+  /* Höchstens ein Snapshot pro lokalem Kalendertag; ein erneuter Eintrag am selben Tag ersetzt den alten.
+     Ein Wert von null (fehlende Kurse) wird abgelehnt und nie als 0 gespeichert. */
+  function upsertSnapshot(list, snap) {
+    const e = validateSnapshot(snap);
+    if (e) return { ok: false, error: e, snapshots: list };
+    const rest = list.filter((s) => s.date !== snap.date);
+    rest.push(cleanSnapshot(snap));
+    rest.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    while (rest.length > LIMITS.MAX_SNAPSHOTS) rest.shift();
+    return { ok: true, snapshots: rest };
+  }
+
+  /* ---------------- Selbsttest für die Systemprüfung im Browser ---------------- */
+  function selfTest() {
+    const results = [];
+    const add = (name, ok, detail) => results.push({ name: name, ok: !!ok, detail: detail || '' });
+    try {
+      const base = { coinId: 'bitcoin', coinName: 'Bitcoin', symbol: 'BTC', inputCurrency: 'EUR', time: '10:00:00', exchange: '', note: '' };
+      const b = validateTransaction(Object.assign({}, base, { id: 't1', seq: 1, type: 'buy', quantity: 1, inputPrice: 100, date: '2024-01-01', fee: 1, feeType: 'amount' }));
+      const s = validateTransaction(Object.assign({}, base, { id: 't2', seq: 2, type: 'sell', quantity: 0.5, inputPrice: 200, date: '2024-02-01', fee: 1, feeType: 'amount' }));
+      const f = computeFifo([b.tx, s.tx]);
+      add('FIFO-Teilverkauf mit Gebühren', f.ok && Math.abs(f.sales[0].gainEur - 48.5) < 1e-9 && Math.abs(f.coins[0].openQuantity - 0.5) < 1e-12, 'Gewinn ' + (f.sales[0] ? f.sales[0].gainEur : 'n/a'));
+      const over = computeFifo([b.tx, validateTransaction(Object.assign({}, base, { id: 't3', seq: 3, type: 'sell', quantity: 2, inputPrice: 1, date: '2024-03-01', fee: 0, feeType: 'amount' })).tx]);
+      add('Überverkauf wird abgewiesen', !over.ok && over.errors[0].code === 'OVERSELL');
+      add('NaN/Infinity werden abgelehnt', parseNumber(NaN).state === 'invalid' && parseNumber(Infinity).state === 'invalid' && parseNumber('Infinity').state === 'invalid');
+      add('Haltefrist 29.02. → 28.02.', holdingDeadline('2024-02-29') === '2025-02-28' && holdingFreeFrom('2024-02-29') === '2025-03-01');
+      add('CSV-Formel-Injection neutralisiert', neutralizeCsvText('=1+1') === "'=1+1" && neutralizeCsvText('@x') === "'@x");
+    } catch (e) {
+      add('Selbsttest ausgeführt', false, String(e && e.message));
+    }
+    return results;
+  }
+
+  root.KryptoCore = Object.freeze({
+    APP_ID: APP_ID, SCHEMA_VERSION: SCHEMA_VERSION, LIMITS: LIMITS, QTY_REL_TOL: QTY_REL_TOL, QTY_ABS_TOL: QTY_ABS_TOL,
+    FIELD_LABELS: FIELD_LABELS, CSV_COLUMNS: CSV_COLUMNS, CSV_REQUIRED: CSV_REQUIRED,
+    qtyTolerance: qtyTolerance, isPlainObject: isPlainObject, parseNumber: parseNumber, numToPlain: numToPlain,
+    normalizeDate: normalizeDate, normalizeTime: normalizeTime, addDays: addDays, daysBetween: daysBetween,
+    localDateString: localDateString, localTimeString: localTimeString,
+    holdingDeadline: holdingDeadline, holdingFreeFrom: holdingFreeFrom, holdingInfo: holdingInfo,
+    validateTransaction: validateTransaction, validateTransactionList: validateTransactionList, formatListError: formatListError,
+    feeEurOf: feeEurOf, grossEurOf: grossEurOf, compareTx: compareTx, computeFifo: computeFifo,
+    safeJsonParse: safeJsonParse, parseStoredState: parseStoredState, buildStatePayload: buildStatePayload,
+    prepareJsonImport: prepareJsonImport, summarizeTransactions: summarizeTransactions,
+    parseCsv: parseCsv, neutralizeCsvText: neutralizeCsvText, unneutralizeCsvText: unneutralizeCsvText,
+    transactionsToCsv: transactionsToCsv, prepareCsvImport: prepareCsvImport,
+    validateSimplePriceResponse: validateSimplePriceResponse, validateExchangeRatesResponse: validateExchangeRatesResponse,
+    validateSearchResponse: validateSearchResponse, validatePriceCache: validatePriceCache, isValidFx: isValidFx,
+    isValidApiPrice: isValidApiPrice, computePortfolioValue: computePortfolioValue,
+    validateSnapshots: validateSnapshots, upsertSnapshot: upsertSnapshot, selfTest: selfTest
+  });
+})(typeof globalThis !== 'undefined' ? globalThis : window);
+</script>
+
+<script id="kp-ui">
+/* =====================================================================
+   OBERFLÄCHE – DOM ausschließlich über createElement/textContent.
+   ===================================================================== */
+(function () {
+  'use strict';
+  const Core = window.KryptoCore;
+  const $ = (id) => document.getElementById(id);
+  if (!Core) {
+    const p = $('app-error-text');
+    if (p) { p.textContent = 'Rechenkern konnte nicht geladen werden. Die App ist nicht nutzbar.'; $('app-error').hidden = false; }
+    return;
+  }
+
+  const KEYS = Object.freeze({
+    data: 'kryptoPortfolio.data',
+    prices: 'kryptoPortfolio.prices',
+    snapshots: 'kryptoPortfolio.snapshots',
+    settings: 'kryptoPortfolio.settings',
+    legacyBackup: 'kryptoPortfolio.data.legacyBackup'
+  });
+  const API_BASE = 'https://api.coingecko.com/api/v3';
+  const API_TIMEOUT_MS = 12000;
+  const API_MAX_RESPONSE_CHARS = 2000000;
+  const AUTO_REFRESH_MS = 5 * 60 * 1000;
+  const STALE_AFTER_MS = 15 * 60 * 1000;
+  const CHART_JS_URL = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js';
+  // SHA-384 aus dem offiziellen npm-Paket chart.js@4.4.1, Datei dist/chart.umd.js.
+  const CHART_JS_SRI = 'sha384-dug+JxfBvklEQdJ4AYuBBAIScUz0bVN73xpy273gcAwHjb3qI0fXmuYNaNfdyYJG';
+  const CHART_LOAD_TIMEOUT_MS = 15000;
+  const TX_PAGE = 200;
+
+  const app = {
+    transactions: [], nextSeq: 1, fifo: Core.computeFifo([]),
+    corrupt: null,
+    storageOk: true,
+    prices: { coins: Object.create(null), fx: null, lastSuccessAt: null },
+    lastAttemptAt: null, lastPriceError: null, cooldownUntil: 0, refreshing: null,
+    snapshots: [], snapshotsCorrupt: false,
+    settings: { displayCurrency: 'EUR' },
+    editingId: null,
+    pendingImport: null,
+    txLimit: TX_PAGE,
+    chartState: 'loading', charts: {}
+  };
+
+  /* ---------------- DOM-Helfer ---------------- */
+  function h(tag, props) {
+    const el = document.createElement(tag);
+    if (props) {
+      for (const key of Object.keys(props)) {
+        const v = props[key];
+        if (v === undefined || v === null || v === false) continue;
+        if (/^on/i.test(key)) throw new Error('Inline-Eventhandler sind nicht erlaubt.');
+        if (key === 'text') el.textContent = String(v);
+        else if (key === 'className') el.className = String(v);
+        else if ((key === 'href' || key === 'src') && /^\s*javascript\s*:/i.test(String(v))) throw new Error('JavaScript-URLs sind nicht erlaubt.');
+        else el.setAttribute(key, v === true ? '' : String(v));
+      }
+    }
+    for (let i = 2; i < arguments.length; i++) add(el, arguments[i]);
+    return el;
+  }
+  function add(el, c) {
+    if (c === null || c === undefined || c === false) return;
+    if (Array.isArray(c)) { c.forEach((x) => add(el, x)); return; }
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  function clear(el) { el.replaceChildren(); return el; }
+
+  /* ---------------- Formatierung ---------------- */
+  const nfCache = new Map();
+  function nf(key, options) {
+    if (!nfCache.has(key)) nfCache.set(key, new Intl.NumberFormat('de-DE', options));
+    return nfCache.get(key);
+  }
+  function displayCurrency() { return app.settings.displayCurrency === 'USD' && app.prices.fx ? 'USD' : 'EUR'; }
+  function toDisplay(eur, fxOverride) {
+    if (displayCurrency() !== 'USD') return eur;
+    return eur * (fxOverride || app.prices.fx.usdPerEur);
+  }
+  function fmtMoney(eur, fxOverride) {
+    if (eur === null || eur === undefined || !Number.isFinite(eur)) return '–';
+    const cur = displayCurrency();
+    return nf('m' + cur, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(toDisplay(eur, fxOverride));
+  }
+  function fmtPrice(eur) {
+    if (eur === null || eur === undefined || !Number.isFinite(eur)) return '–';
+    const cur = displayCurrency();
+    const v = toDisplay(eur);
+    const a = Math.abs(v);
+    if (a !== 0 && a < 0.01) return nf('ps' + cur, { style: 'currency', currency: cur, maximumSignificantDigits: 6 }).format(v);
+    const digits = a >= 1 ? 2 : 4;
+    return nf('p' + cur + digits, { style: 'currency', currency: cur, minimumFractionDigits: 2, maximumFractionDigits: digits }).format(v);
+  }
+  function fmtQty(n) {
+    if (n === null || n === undefined || !Number.isFinite(n)) return '–';
+    return nf('q', { maximumFractionDigits: 12 }).format(n);
+  }
+  function fmtPct(p) {
+    if (p === null || p === undefined || !Number.isFinite(p)) return '–';
+    return nf('pct', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' }).format(p);
+  }
+  /* Gewinn/Verlust nicht nur über Farbe: Pfeil und Vorzeichen im Text. */
+  function gainCell(eur) {
+    if (eur === null || eur === undefined || !Number.isFinite(eur)) return { content: '–' };
+    const tol = 0.005;
+    const text = fmtMoney(eur);
+    if (eur > tol) return { content: '▲ +' + text, className: 'gain-pos' };
+    if (eur < -tol) return { content: '▼ ' + text, className: 'gain-neg' };
+    return { content: '± ' + text };
+  }
+  function fmtDate(iso) {
+    if (typeof iso !== 'string' || iso.length !== 10) return '–';
+    return iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(0, 4);
+  }
+  function fmtTime(t) { return typeof t === 'string' ? (t.endsWith(':00') ? t.slice(0, 5) : t) : ''; }
+  function fmtDateTimeMs(ms) {
+    if (!Number.isFinite(ms)) return '–';
+    const d = new Date(ms);
+    return fmtDate(Core.localDateString(d)) + ', ' + Core.localTimeString(d).slice(0, 5) + ' Uhr';
+  }
+  function inputNumber(n) { return Core.numToPlain(n).replace('.', ','); }
+  function today() { return Core.localDateString(new Date()); }
+
+  /* ---------------- Tabellen ---------------- */
+  function cellContent(cell) {
+    if (cell !== null && typeof cell === 'object' && !(cell instanceof Node) && !Array.isArray(cell)) return cell;
+    return { content: cell };
+  }
+  function dataTable(caption, columns, rows, emptyText) {
+    if (!rows.length) return h('p', { className: 'empty', text: emptyText });
+    const thead = h('thead', null, h('tr', null, columns.map((c) => h('th', { scope: 'col', className: c.num ? 'num' : null, text: c.label }))));
+    const tbody = h('tbody');
+    for (const r of rows) {
+      const tr = h('tr', { className: r.className || null });
+      r.cells.forEach((cell, i) => {
+        const col = columns[i] || { label: '' };
+        const cc = cellContent(cell);
+        const cls = [col.num ? 'num' : '', col.text ? 'text-cell' : '', cc.className || ''].join(' ').trim();
+        const td = h('td', { 'data-label': col.label, className: cls || null });
+        add(td, cc.content);
+        tr.append(td);
+      });
+      tbody.append(tr);
+    }
+    return h('div', { className: 'table-wrap', role: 'region', 'aria-label': caption, tabindex: '0' },
+      h('table', { className: 'data-table' }, h('caption', { className: 'sr-only', text: caption }), thead, tbody));
+  }
+
+  /* ---------------- Meldungen ---------------- */
+  let statusTimer = null;
+  function showStatus(msg) {
+    const el = $('app-status');
+    el.textContent = msg;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { el.textContent = ''; }, 8000);
+  }
+  function showError(msg) {
+    $('app-error-text').textContent = msg;
+    $('app-error').hidden = false;
+  }
+  function hideError() { $('app-error').hidden = true; $('app-error-text').textContent = ''; }
+
+  function confirmDialog(title, message, confirmLabel) {
+    const dlg = $('confirm-dialog');
+    if (!dlg || typeof dlg.showModal !== 'function') return Promise.resolve(window.confirm(title + '\n\n' + message));
+    $('confirm-title').textContent = title;
+    $('confirm-message').textContent = message;
+    $('confirm-ok').textContent = confirmLabel || 'OK';
+    const opener = document.activeElement;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => {
+        if (done) return;
+        done = true;
+        $('confirm-ok').removeEventListener('click', onOk);
+        $('confirm-cancel').removeEventListener('click', onCancel);
+        dlg.removeEventListener('close', onClose);
+        if (dlg.open) dlg.close();
+        if (opener && typeof opener.focus === 'function') opener.focus();
+        resolve(v);
+      };
+      const onOk = () => finish(true);
+      const onCancel = () => finish(false);
+      const onClose = () => finish(false);
+      $('confirm-ok').addEventListener('click', onOk);
+      $('confirm-cancel').addEventListener('click', onCancel);
+      dlg.addEventListener('close', onClose);
+      dlg.showModal();
+      $('confirm-cancel').focus();
+    });
+  }
+
+  function showExportFallback(filename, content) {
+    const box = $('export-fallback');
+    if (!box) return;
+    $('export-fallback-name').textContent = 'Dateiname: ' + filename;
+    $('export-text').value = content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+    box.hidden = false;
+  }
+  async function copyExport() {
+    const ta = $('export-text');
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      showStatus('Inhalt in die Zwischenablage kopiert.');
+    } catch (e) {
+      ta.focus();
+      ta.select();
+      showStatus('Kopieren wurde blockiert. Der Text ist markiert – bitte mit Strg+C bzw. Cmd+C kopieren.');
+    }
+  }
+
+  function download(filename, content, mime) {
+    showExportFallback(filename, content);
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: filename });
+    a.hidden = true;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  function newId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    const b = new Uint8Array(16);
+    window.crypto.getRandomValues(b);
+    return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* ---------------- LocalStorage ---------------- */
+  function storageGet(key) {
+    try { return { ok: true, value: window.localStorage.getItem(key) }; }
+    catch (e) { return { ok: false, error: e }; }
+  }
+  function isQuotaError(e) {
+    return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+  }
+  function storageSet(key, value) {
+    try { window.localStorage.setItem(key, value); return { ok: true }; }
+    catch (e) { return { ok: false, error: e, quota: isQuotaError(e) }; }
+  }
+  function storageRemove(key) {
+    try { window.localStorage.removeItem(key); return { ok: true }; }
+    catch (e) { return { ok: false, error: e }; }
+  }
+  function storageErrorText(r) {
+    return r.quota
+      ? 'Speichern fehlgeschlagen: Die Speichergrenze des Browsers ist erreicht. Bitte ein JSON-Backup erstellen und Daten bereinigen. Die Änderung wurde nicht übernommen.'
+      : 'Speichern fehlgeschlagen: LocalStorage ist nicht verfügbar (z. B. privater Modus oder blockierte Website-Daten). Die Änderung wurde nicht übernommen.';
+  }
+
+  /* Übernimmt eine bereits vollständig validierte Transaktionsfolge.
+     Der Zustand im Speicher ändert sich nur, wenn das Speichern gelingt. */
+  function commitTransactions(txs, nextSeq, fifo, message) {
+    const payload = JSON.stringify(Core.buildStatePayload(txs, nextSeq));
+    const r = storageSet(KEYS.data, payload);
+    if (!r.ok) { showError(storageErrorText(r)); return false; }
+    app.transactions = txs;
+    app.nextSeq = nextSeq;
+    app.fifo = fifo || Core.computeFifo(txs);
+    app.corrupt = null;
+    $('recovery-panel').hidden = true;
+    renderAll();
+    if (message) showStatus(message);
+    return true;
+  }
+
+  function setCorrupt(raw, errors) {
+    app.corrupt = { raw: raw, errors: errors };
+    const list = clear($('recovery-errors'));
+    errors.slice(0, 20).forEach((e) => list.append(h('li', { text: Core.formatListError(e) })));
+    if (errors.length > 20) list.append(h('li', { text: '… und ' + (errors.length - 20) + ' weitere Fehler.' }));
+    $('recovery-panel').hidden = false;
+  }
+
+  function loadData() {
+    const r = storageGet(KEYS.data);
+    if (!r.ok) {
+      app.storageOk = false;
+      showError('LocalStorage ist nicht verfügbar. Die App funktioniert, aber Änderungen gehen beim Schließen verloren. Bitte Backups herunterladen.');
+      return;
+    }
+    if (r.value === null) return;
+    const parsed = Core.safeJsonParse(r.value);
+    if (!parsed.ok) { setCorrupt(r.value, [{ index: null, message: 'Gespeicherte Daten sind kein gültiges JSON: ' + parsed.error }]); return; }
+    const st = Core.parseStoredState(parsed.value, {});
+    if (!st.ok) { setCorrupt(r.value, st.errors); return; }
+    app.transactions = st.state.transactions;
+    app.nextSeq = st.state.nextSeq;
+    app.fifo = st.fifo;
+    if (st.migratedFrom !== Core.SCHEMA_VERSION) {
+      // Original sichern, bevor migrierte Daten gespeichert werden.
+      const b = storageSet(KEYS.legacyBackup, r.value);
+      if (!b.ok) { showError('Altdaten wurden migriert, aber nicht gespeichert, weil keine Sicherung des Originals angelegt werden konnte.'); return; }
+      const s = storageSet(KEYS.data, JSON.stringify(Core.buildStatePayload(app.transactions, app.nextSeq)));
+      if (s.ok) showStatus('Gespeicherte Altdaten wurden auf Schema-Version ' + Core.SCHEMA_VERSION + ' migriert. Das Original liegt unter „' + KEYS.legacyBackup + '“.');
+      else showError(storageErrorText(s));
+    }
+  }
+
+  function loadPrices() {
+    const r = storageGet(KEYS.prices);
+    if (!r.ok || r.value === null) return;
+    const parsed = Core.safeJsonParse(r.value);
+    if (!parsed.ok) return; // Kurs-Cache ist verzichtbar; wird bei der nächsten Aktualisierung neu geschrieben.
+    const v = Core.validatePriceCache(parsed.value, Date.now());
+    if (v.ok) app.prices = v.cache;
+  }
+  function savePrices() {
+    const payload = { schemaVersion: 1, coins: app.prices.coins, fx: app.prices.fx, lastSuccessAt: app.prices.lastSuccessAt };
+    const r = storageSet(KEYS.prices, JSON.stringify(payload));
+    if (!r.ok && r.quota) showError('Kurse konnten nicht gespeichert werden: Speichergrenze erreicht.');
+  }
+
+  function loadSnapshots() {
+    const r = storageGet(KEYS.snapshots);
+    if (!r.ok || r.value === null) return;
+    const parsed = Core.safeJsonParse(r.value);
+    const v = parsed.ok && Core.isPlainObject(parsed.value) && parsed.value.schemaVersion === 1
+      ? Core.validateSnapshots(parsed.value.snapshots) : { ok: false };
+    if (v.ok) app.snapshots = v.snapshots;
+    else {
+      app.snapshotsCorrupt = true; // nicht überschreiben
+      showError('Der gespeicherte Portfolio-Verlauf ist beschädigt und wird nicht verwendet oder überschrieben. „Alle Daten löschen“ oder ein Backup-Import setzt ihn zurück.');
+    }
+  }
+  function saveSnapshots(list) {
+    const r = storageSet(KEYS.snapshots, JSON.stringify({ schemaVersion: 1, snapshots: list }));
+    if (!r.ok) { showError(storageErrorText(r)); return false; }
+    app.snapshots = list;
+    app.snapshotsCorrupt = false;
+    return true;
+  }
+
+  function loadSettings() {
+    const r = storageGet(KEYS.settings);
+    if (!r.ok || r.value === null) return;
+    const parsed = Core.safeJsonParse(r.value);
+    if (parsed.ok && Core.isPlainObject(parsed.value) && (parsed.value.displayCurrency === 'EUR' || parsed.value.displayCurrency === 'USD')) {
+      app.settings.displayCurrency = parsed.value.displayCurrency;
+    }
+  }
+  function saveSettings() { storageSet(KEYS.settings, JSON.stringify({ displayCurrency: app.settings.displayCurrency })); }
+
+  /* ---------------- CoinGecko-API ---------------- */
+  class ApiError extends Error {
+    constructor(kind, message, retryAfterSec) { super(message); this.kind = kind; this.retryAfterSec = retryAfterSec; }
+  }
+  const inflight = new Map();
+  function apiGet(path) {
+    const url = API_BASE + path;
+    if (url.indexOf('https://api.coingecko.com/api/v3/') !== 0) return Promise.reject(new ApiError('config', 'Ungültige API-Adresse.'));
+    if (inflight.has(url)) return inflight.get(url); // parallele identische Abfragen zusammenführen
+    const wait = Math.ceil((app.cooldownUntil - Date.now()) / 1000);
+    if (wait > 0) return Promise.reject(new ApiError('ratelimit', 'CoinGecko-Rate-Limit: nächster Versuch frühestens in ' + wait + ' s.', wait));
+    if (navigator.onLine === false) return Promise.reject(new ApiError('offline', 'Keine Internetverbindung.'));
+    const p = (async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+      try {
+        let res;
+        try {
+          res = await fetch(url, { method: 'GET', signal: ctrl.signal, headers: { Accept: 'application/json' },
+            credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', redirect: 'error' });
+        } catch (e) {
+          if (e && e.name === 'AbortError') throw new ApiError('timeout', 'Zeitüberschreitung: CoinGecko hat nicht innerhalb von ' + (API_TIMEOUT_MS / 1000) + ' s geantwortet.');
+          throw new ApiError('network', 'Netzwerkfehler: CoinGecko ist nicht erreichbar (offline, blockiert oder Server nicht verfügbar).');
+        }
+        if (res.status === 429) {
+          const ra = parseInt(res.headers.get('Retry-After') || '', 10);
+          const sec = Number.isFinite(ra) && ra > 0 && ra < 3600 ? ra : 60;
+          app.cooldownUntil = Date.now() + sec * 1000;
+          throw new ApiError('ratelimit', 'CoinGecko-Rate-Limit erreicht. Nächster Versuch frühestens in ' + sec + ' s.', sec);
+        }
+        if (!res.ok) throw new ApiError('http', 'CoinGecko antwortete mit Fehler HTTP ' + res.status + '.');
+        const text = await res.text();
+        if (text.length > API_MAX_RESPONSE_CHARS) throw new ApiError('invalid', 'CoinGecko-Antwort ist unerwartet groß.');
+        const parsed = Core.safeJsonParse(text);
+        if (!parsed.ok) throw new ApiError('invalid', 'CoinGecko-Antwort ist kein gültiges JSON.');
+        return parsed.value;
+      } catch (e) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('network', 'Unerwarteter Fehler beim Abruf: ' + String(e && e.message).slice(0, 120));
+      } finally {
+        clearTimeout(timer);
+        inflight.delete(url);
+      }
+    })();
+    inflight.set(url, p);
+    return p;
+  }
+
+  function coinIdsInPortfolio() {
+    const s = new Set();
+    for (const t of app.transactions) s.add(t.coinId);
+    return Array.from(s).sort();
+  }
+
+  function refreshPrices() {
+    if (app.refreshing) return app.refreshing;
+    const run = async () => {
+      const started = Date.now();
+      app.lastAttemptAt = started;
+      renderPriceStatus('Kurse werden aktualisiert …');
+      $('btn-refresh').disabled = true;
+      const ids = coinIdsInPortfolio();
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+      const tasks = [apiGet('/exchange_rates').then((j) => {
+        const r = Core.validateExchangeRatesResponse(j);
+        if (!r.ok) throw new ApiError('invalid', r.error);
+        return r;
+      })];
+      chunks.forEach((c) => tasks.push(apiGet('/simple/price?ids=' + encodeURIComponent(c.join(',')) + '&vs_currencies=eur').then((j) => {
+        const r = Core.validateSimplePriceResponse(j, c);
+        if (!r.ok) throw new ApiError('invalid', r.error);
+        return r;
+      })));
+      const results = await Promise.allSettled(tasks);
+      const errors = [];
+      const coins = Object.assign(Object.create(null), app.prices.coins);
+      let fx = app.prices.fx;
+      if (results[0].status === 'fulfilled') fx = { usdPerEur: results[0].value.usdPerEur, updatedAt: started };
+      else errors.push(results[0].reason);
+      const invalidIds = [];
+      results.slice(1).forEach((r) => {
+        if (r.status !== 'fulfilled') { errors.push(r.reason); return; }
+        for (const id of Object.keys(r.value.prices)) coins[id] = { eur: r.value.prices[id], updatedAt: started };
+        invalidIds.push.apply(invalidIds, r.value.invalid); // alte gültige Kurse bleiben erhalten
+      });
+      const allOk = errors.length === 0 && invalidIds.length === 0;
+      app.prices = { coins: coins, fx: fx, lastSuccessAt: allOk ? started : app.prices.lastSuccessAt };
+      if (errors.length) {
+        const e = errors[0];
+        app.lastPriceError = (e instanceof ApiError ? e.message : 'Unbekannter Fehler beim Kursabruf.') + ' Gespeicherte Kurse werden weiter verwendet.';
+      } else if (invalidIds.length) {
+        app.lastPriceError = 'Für ' + invalidIds.length + ' Coin(s) lieferte CoinGecko keinen gültigen Kurs: ' + invalidIds.slice(0, 5).join(', ') + (invalidIds.length > 5 ? ' …' : '') + '.';
+      } else app.lastPriceError = null;
+      savePrices();
+      maybeSnapshot(started);
+      renderAll();
+    };
+    app.refreshing = run().catch((e) => {
+      app.lastPriceError = 'Kursaktualisierung fehlgeschlagen: ' + String(e && e.message).slice(0, 150);
+      renderPriceStatus();
+    }).finally(() => { app.refreshing = null; $('btn-refresh').disabled = false; });
+    return app.refreshing;
+  }
+
+  function priceIsStale(entry) { return !entry || (Date.now() - entry.updatedAt > STALE_AFTER_MS); }
+
+  function maybeSnapshot(refreshStartedAt) {
+    if (app.snapshotsCorrupt || app.corrupt || app.transactions.length === 0) return;
+    const val = Core.computePortfolioValue(app.fifo, app.prices.coins);
+    if (!val.complete || val.valueEur === null) return; // fehlende Kurse: kein Snapshot, niemals 0 speichern
+    for (const p of val.positions) if (!(p.updatedAt >= refreshStartedAt)) return; // nur frische Kurse
+    const r = Core.upsertSnapshot(app.snapshots, { date: today(), valueEur: val.valueEur, costEur: val.costEur,
+      usdPerEur: app.prices.fx ? app.prices.fx.usdPerEur : null });
+    if (r.ok) saveSnapshots(r.snapshots);
+  }
+
+  /* ---------------- Chart.js ---------------- */
+  /* Installierbare Web-App (Android): erkennbar am Manifest-Link, nur über HTTPS bzw. localhost.
+     Dann wird Chart.js aus der mitgelieferten Datei geladen (gleiche SRI-Prüfsumme), das CDN ist Rückfallebene. */
+  const IS_WEB_APP = !!document.querySelector('link[rel="manifest"]') &&
+    (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  const CHART_JS_LOCAL = 'chart.umd.js';
+
+  function loadChartJs() {
+    if (typeof window.Chart === 'function') { app.chartState = 'ready'; return; }
+    const sources = IS_WEB_APP ? [CHART_JS_LOCAL, CHART_JS_URL] : [CHART_JS_URL];
+    const tryLoad = (i) => {
+      const s = document.createElement('script');
+      s.src = sources[i];
+      s.integrity = CHART_JS_SRI;
+      s.crossOrigin = 'anonymous';
+      s.referrerPolicy = 'no-referrer';
+      s.async = true;
+      const fail = () => {
+        if (i + 1 < sources.length) { tryLoad(i + 1); return; }
+        if (app.chartState === 'loading') { app.chartState = 'failed'; renderCharts(); }
+      };
+      const timer = setTimeout(fail, CHART_LOAD_TIMEOUT_MS);
+      s.addEventListener('load', () => {
+        clearTimeout(timer);
+        if (typeof window.Chart === 'function') { app.chartState = 'ready'; renderCharts(); } else fail();
+      });
+      s.addEventListener('error', () => { clearTimeout(timer); s.remove(); fail(); });
+      document.head.append(s);
+    };
+    tryLoad(0);
+  }
+
+  function registerWebApp() {
+    if (!IS_WEB_APP) return;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {
+        showStatus('Offline-Modus konnte nicht aktiviert werden. Die App funktioniert online weiterhin.');
+      });
+    }
+    // Browser bitten, die Daten dieser App nicht automatisch zu löschen.
+    if (navigator.storage && typeof navigator.storage.persist === 'function') {
+      navigator.storage.persist().catch(() => {});
+    }
+  }
+
+  const PALETTE = ['#2f6fd6', '#e0841a', '#2a9d5b', '#c23b6b', '#7a5bd1', '#1aa3b8', '#b0892a', '#d4553a', '#5c7a2a', '#8a8f99'];
+
+  function destroyChart(key) {
+    if (app.charts[key]) { try { app.charts[key].destroy(); } catch (e) { /* ignorieren */ } app.charts[key] = null; }
+  }
+
+  function renderCharts() {
+    const val = Core.computePortfolioValue(app.fifo, app.prices.coins);
+    const priced = val.positions.filter((p) => p.valueEur !== null && p.valueEur > 0).sort((a, b) => b.valueEur - a.valueEur);
+    const total = priced.reduce((s, p) => s + p.valueEur, 0);
+    $('chart-alloc-summary').textContent = priced.length
+      ? priced.map((p) => p.coin.symbol + ' ' + fmtPct(p.valueEur / total).replace('+', '')).join(' · ') + (val.missing.length ? ' (ohne ' + val.missing.length + ' Coin(s) ohne Kurs)' : '')
+      : 'Keine offenen Positionen mit aktuellem Kurs.';
+    const open = val.positions;
+    $('chart-invest-summary').textContent = open.length
+      ? open.map((p) => p.coin.symbol + ': investiert ' + fmtMoney(p.coin.openCostEur) + ', Wert ' + fmtMoney(p.valueEur)).join(' · ')
+      : 'Keine offenen Positionen.';
+    const snaps = app.snapshots;
+    $('chart-history-summary').textContent = snaps.length
+      ? snaps.length + ' Tageswert(e) von ' + fmtDate(snaps[0].date) + ' bis ' + fmtDate(snaps[snaps.length - 1].date) + '; zuletzt ' + fmtMoney(snaps[snaps.length - 1].valueEur, snaps[snaps.length - 1].usdPerEur) + '.'
+      : 'Noch kein Verlauf. Pro Kalendertag wird nach einer vollständigen Kursaktualisierung ein Wert gespeichert.';
+
+    const ready = app.chartState === 'ready' && typeof window.Chart === 'function';
+    const fallbackText = app.chartState === 'loading'
+      ? 'Diagramme werden geladen …'
+      : 'Diagramme nicht verfügbar: Chart.js konnte nicht geladen werden (offline oder blockiert). Alle Werte stehen in den Tabellen und Zusammenfassungen.';
+    const keys = ['alloc', 'invest', 'history'];
+    if (!ready || $('tab-dashboard').hidden) {
+      keys.forEach((k) => {
+        if (!ready) { destroyChart(k); $('chart-' + k).hidden = true; $('chart-' + k + '-fallback').hidden = false; $('chart-' + k + '-fallback').textContent = fallbackText; }
+      });
+      return;
+    }
+    const css = getComputedStyle(document.documentElement);
+    const textColor = css.getPropertyValue('--text').trim() || '#333';
+    const gridColor = css.getPropertyValue('--border').trim() || '#ccc';
+    const cur = displayCurrency();
+    const draw = (key, emptyMsg, hasData, config) => {
+      destroyChart(key);
+      const canvas = $('chart-' + key);
+      const fb = $('chart-' + key + '-fallback');
+      if (!hasData) { canvas.hidden = true; fb.hidden = false; fb.textContent = emptyMsg; return; }
+      try {
+        canvas.hidden = false; fb.hidden = true;
+        app.charts[key] = new window.Chart(canvas, config);
+      } catch (e) {
+        canvas.hidden = true; fb.hidden = false; fb.textContent = 'Diagramm konnte nicht gezeichnet werden.';
+      }
+    };
+    const base = { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { labels: { color: textColor } } } };
+    const axes = { x: { ticks: { color: textColor }, grid: { color: gridColor } },
+      y: { ticks: { color: textColor }, grid: { color: gridColor }, title: { display: true, text: cur, color: textColor } } };
+
+    draw('alloc', 'Keine offenen Positionen mit aktuellem Kurs.', priced.length > 0, {
+      type: 'doughnut',
+      data: { labels: priced.map((p) => p.coin.symbol), datasets: [{ data: priced.map((p) => toDisplay(p.valueEur)), backgroundColor: priced.map((p, i) => PALETTE[i % PALETTE.length]) }] },
+      options: base
+    });
+    draw('invest', 'Keine offenen Positionen.', open.length > 0, {
+      type: 'bar',
+      data: { labels: open.map((p) => p.coin.symbol), datasets: [
+        { label: 'Investiert (offen)', data: open.map((p) => toDisplay(p.coin.openCostEur)), backgroundColor: PALETTE[0] },
+        { label: 'Aktueller Wert', data: open.map((p) => (p.valueEur === null ? null : toDisplay(p.valueEur))), backgroundColor: PALETTE[1] }] },
+      options: Object.assign({}, base, { scales: axes })
+    });
+    draw('history', 'Noch kein Verlauf vorhanden.', snaps.length > 0, {
+      type: 'line',
+      data: { labels: snaps.map((s) => fmtDate(s.date)), datasets: [
+        { label: 'Portfoliowert', data: snaps.map((s) => toDisplay(s.valueEur, s.usdPerEur)), borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: 0.2, pointRadius: 2 },
+        { label: 'Kostenbasis', data: snaps.map((s) => toDisplay(s.costEur, s.usdPerEur)), borderColor: PALETTE[9], backgroundColor: PALETTE[9], borderDash: [6, 4], pointRadius: 0 }] },
+      options: Object.assign({}, base, { scales: axes })
+    });
+  }
+
+  /* ---------------- Rendering ---------------- */
+  function renderPriceStatus(busyText) {
+    const el = clear($('price-status'));
+    if (busyText) { el.textContent = busyText; return; }
+    const parts = [];
+    const last = app.prices.lastSuccessAt;
+    parts.push(last ? 'Kurse: letzte erfolgreiche Aktualisierung ' + fmtDateTimeMs(last) + '.' : 'Kurse: noch keine erfolgreiche Aktualisierung.');
+    if (app.prices.fx) parts.push(' EUR/USD: 1 € = ' + nf('fx', { maximumFractionDigits: 4 }).format(app.prices.fx.usdPerEur) + ' $.');
+    el.append(parts.join(''));
+    const stale = !last || Date.now() - last > STALE_AFTER_MS || app.lastPriceError;
+    if (stale && app.transactions.length) {
+      el.append(' ');
+      el.append(h('span', { className: 'stale', text: '⚠ Kurse möglicherweise veraltet' + (app.lastPriceError ? ': ' + app.lastPriceError : '.') }));
+    }
+    if (app.settings.displayCurrency === 'USD' && !app.prices.fx) {
+      el.append(' ');
+      el.append(h('span', { className: 'stale', text: '⚠ Kein EUR/USD-Kurs verfügbar – Anzeige in EUR.' }));
+    }
+  }
+
+  function kpi(label, value, sub, className) {
+    return h('div', { className: 'kpi' }, h('div', { className: 'label', text: label }),
+      h('div', { className: 'value' + (className ? ' ' + className : ''), text: value }), sub ? h('div', { className: 'sub', text: sub }) : null);
+  }
+
+  function renderDashboard() {
+    const val = Core.computePortfolioValue(app.fifo, app.prices.coins);
+    let realized = 0, fees = 0;
+    for (const c of app.fifo.coins) { realized += c.realizedGainEur; fees += c.feesEur; }
+    const unreal = val.complete ? val.valueEur - val.costEur : null;
+    const r = gainCell(realized);
+    const u = gainCell(unreal);
+    clear($('dash-kpis')).append(
+      kpi('Aktueller Portfoliowert', val.complete ? fmtMoney(val.valueEur) : 'unvollständig', val.complete ? null : 'Teilwert ' + fmtMoney(val.partialValueEur) + ' – ' + val.missing.length + ' Coin(s) ohne Kurs'),
+      kpi('Investiert (offene Lots)', fmtMoney(val.costEur), 'inkl. anteiliger Kaufgebühren'),
+      kpi('Unrealisiert G/V', u.content, unreal !== null && val.costEur > 0 ? fmtPct(unreal / val.costEur) : null, u.className),
+      kpi('Realisiert G/V (FIFO)', r.content, 'nach Gebühren', r.className),
+      kpi('Gebühren gesamt', fmtMoney(fees), app.transactions.length + ' Transaktion(en)')
+    );
+    const notices = clear($('dash-notices'));
+    if (app.transactions.length === 0) {
+      notices.append(h('div', { className: 'notice' }, h('p', { text: 'Noch keine Transaktionen. Im Bereich „Transaktionen“ den ersten Kauf erfassen oder im Bereich „Daten“ ein Backup importieren.' })));
+    }
+    if (val.missing.length) {
+      notices.append(h('div', { className: 'notice' }, h('p', { text: 'Für ' + val.missing.join(', ') + ' liegt kein gültiger Kurs vor. Diese Positionen fehlen im Portfoliowert; es wird kein Tageswert gespeichert.' })));
+    }
+    const rows = val.positions.map((p) => {
+      const c = p.coin;
+      const stale = p.priceEur !== null && priceIsStale(app.prices.coins[c.coinId]);
+      return { cells: [
+        c.coinName + ' (' + c.symbol + ')',
+        { content: fmtQty(c.openQuantity) },
+        { content: fmtPrice(c.openCostEur / c.openQuantity) },
+        { content: p.priceEur === null ? 'kein Kurs' : fmtPrice(p.priceEur) + (stale ? ' ⚠ veraltet' : '') },
+        { content: fmtMoney(p.valueEur) },
+        gainCell(p.unrealizedEur),
+        { content: p.unrealizedEur === null || c.openCostEur <= 0 ? '–' : fmtPct(p.unrealizedEur / c.openCostEur) }
+      ] };
+    });
+    clear($('dash-positions')).append(dataTable('Offene Positionen',
+      [{ label: 'Coin' }, { label: 'Menge', num: true }, { label: 'Ø Einstand', num: true }, { label: 'Kurs', num: true },
+        { label: 'Wert', num: true }, { label: 'Unrealisiert', num: true }, { label: '%', num: true }],
+      rows, 'Keine offenen Positionen.'));
+    renderCharts();
+  }
+
+  function renderTransactions() {
+    const filter = $('tx-filter').value.trim().toLowerCase();
+    const sorted = app.transactions.slice().sort(Core.compareTx).reverse();
+    const filtered = filter ? sorted.filter((t) => (t.coinId + ' ' + t.coinName + ' ' + t.symbol + ' ' + t.exchange + ' ' + t.note).toLowerCase().includes(filter)) : sorted;
+    const shown = filtered.slice(0, app.txLimit);
+    const locked = !!app.corrupt;
+    const rows = shown.map((t) => {
+      const edit = h('button', { type: 'button', className: 'small', 'data-action': 'edit', 'data-id': t.id, text: 'Bearbeiten', 'aria-label': 'Transaktion vom ' + fmtDate(t.date) + ' bearbeiten', disabled: locked });
+      const del = h('button', { type: 'button', className: 'small danger', 'data-action': 'delete', 'data-id': t.id, text: 'Löschen', 'aria-label': 'Transaktion vom ' + fmtDate(t.date) + ' löschen', disabled: locked });
+      const feeText = t.feeType === 'percent' ? nf('fp', { maximumFractionDigits: 4 }).format(t.fee) + ' % (' + fmtMoney(Core.feeEurOf(t)) + ')' : fmtMoney(Core.feeEurOf(t));
+      const priceOrig = t.inputCurrency === 'USD' ? ' (eingegeben ' + nf('usd-in', { style: 'currency', currency: 'USD', maximumSignificantDigits: 10 }).format(t.inputPrice) + ')' : '';
+      return { cells: [
+        fmtDate(t.date) + ' ' + fmtTime(t.time),
+        h('span', { className: 'badge ' + t.type, text: t.type === 'buy' ? 'Kauf' : 'Verkauf' }),
+        t.coinName + ' (' + t.symbol + ')',
+        { content: fmtQty(t.quantity) },
+        { content: fmtPrice(t.priceEur) + priceOrig },
+        { content: fmtMoney(Core.grossEurOf(t)) },
+        { content: feeText },
+        { content: t.exchange || '–' },
+        { content: t.note || '–' },
+        h('div', { className: 'row-actions' }, edit, del)
+      ] };
+    });
+    const box = clear($('tx-list'));
+    box.append(dataTable('Transaktionen',
+      [{ label: 'Datum' }, { label: 'Typ' }, { label: 'Coin', text: true }, { label: 'Menge', num: true }, { label: 'Preis', num: true },
+        { label: 'Handelswert', num: true }, { label: 'Gebühr', num: true }, { label: 'Börse/Wallet', text: true }, { label: 'Notiz', text: true }, { label: 'Aktionen' }],
+      rows, filter ? 'Keine Transaktion passt zum Filter.' : 'Noch keine Transaktionen erfasst.'));
+    if (filtered.length > shown.length) {
+      const more = h('button', { type: 'button', id: 'btn-tx-more', text: 'Weitere anzeigen (' + (filtered.length - shown.length) + ' verbleibend)' });
+      more.addEventListener('click', () => { app.txLimit += TX_PAGE; renderTransactions(); });
+      box.append(h('p', null, more));
+    }
+    renderKnownCoins();
+  }
+
+  function coinOptions(select) {
+    const current = select.value;
+    const first = select.options[0];
+    clear(select).append(first);
+    for (const c of app.fifo.coins.slice().sort((a, b) => a.symbol.localeCompare(b.symbol))) {
+      select.append(h('option', { value: c.coinId, text: c.symbol + ' – ' + c.coinName }));
+    }
+    select.value = app.fifo.coinMap[current] ? current : '';
+  }
+  function renderKnownCoins() { coinOptions($('f-known-coin')); }
+
+  function renderFifo() {
+    coinOptions($('fifo-coin'));
+    const coinFilter = $('fifo-coin').value;
+    const coins = app.fifo.coins.filter((c) => !coinFilter || c.coinId === coinFilter);
+    const summaryRows = coins.map((c) => ({ cells: [
+      c.coinName + ' (' + c.symbol + ')', { content: fmtQty(c.boughtQuantity) }, { content: fmtQty(c.soldQuantity) },
+      { content: fmtQty(c.openQuantity) }, { content: fmtMoney(c.realizedProceedsEur) }, { content: fmtMoney(c.realizedCostEur) },
+      gainCell(c.realizedGainEur), { content: fmtMoney(c.feesEur) }] }));
+    clear($('fifo-summary')).append(dataTable('FIFO-Zusammenfassung je Coin',
+      [{ label: 'Coin' }, { label: 'Gekauft', num: true }, { label: 'Verkauft', num: true }, { label: 'Offen', num: true },
+        { label: 'Nettoerlös', num: true }, { label: 'Anschaffungskosten', num: true }, { label: 'Realisiert G/V', num: true }, { label: 'Gebühren', num: true }],
+      summaryRows, 'Keine Daten.'));
+
+    const sales = app.fifo.sales.filter((s) => !coinFilter || s.coinId === coinFilter).slice().reverse();
+    const realizedRows = [];
+    for (const s of sales) {
+      realizedRows.push({ cells: [
+        fmtDate(s.date) + ' ' + fmtTime(s.time), s.symbol, { content: fmtQty(s.quantity) }, { content: fmtMoney(s.grossEur) },
+        { content: fmtMoney(s.feeEur) }, { content: fmtMoney(s.netEur) }, { content: fmtMoney(s.costEur) }, gainCell(s.gainEur), 'Verkauf'] });
+      for (const a of s.allocations) {
+        realizedRows.push({ className: 'sub-row', cells: [
+          '↳ aus Kauf vom ' + fmtDate(a.buyDate) + ' ' + fmtTime(a.buyTime), s.symbol, { content: fmtQty(a.quantity) }, { content: '–' },
+          { content: '–' }, { content: fmtMoney(a.proceedsEur) }, { content: fmtMoney(a.costEur) }, gainCell(a.gainEur),
+          a.holdingDays + ' Tage · ' + (a.overOneYear ? 'rechnerisch > 1 Jahr' : 'unter 1 Jahr')] });
+      }
+    }
+    clear($('fifo-realized')).append(dataTable('Realisierte Verkäufe mit Lot-Zuordnung',
+      [{ label: 'Verkauf / Lot' }, { label: 'Coin' }, { label: 'Menge', num: true }, { label: 'Bruttoerlös', num: true }, { label: 'Gebühr', num: true },
+        { label: 'Nettoerlös', num: true }, { label: 'Anschaffungskosten', num: true }, { label: 'G/V', num: true }, { label: 'Haltedauer' }],
+      realizedRows, 'Noch keine Verkäufe.'));
+
+    const openLots = app.fifo.lots.filter((l) => l.remaining > 0 && (!coinFilter || l.coinId === coinFilter));
+    const openRows = openLots.map((l) => {
+      const p = app.prices.coins[l.coinId];
+      const value = p ? l.remaining * p.eur : null;
+      return { cells: [
+        fmtDate(l.date) + ' ' + fmtTime(l.time), l.symbol, { content: fmtQty(l.quantity) }, { content: fmtQty(l.remaining) },
+        { content: fmtPrice(l.unitCostEur) }, { content: fmtMoney(l.openCostEur) }, { content: value === null ? 'kein Kurs' : fmtMoney(value) },
+        gainCell(value === null ? null : value - l.openCostEur)] };
+    });
+    clear($('fifo-open')).append(dataTable('Offene Kauf-Lots',
+      [{ label: 'Kauf' }, { label: 'Coin' }, { label: 'Ursprünglich', num: true }, { label: 'Offen', num: true }, { label: 'Einstand/Einheit', num: true },
+        { label: 'Offene Kosten', num: true }, { label: 'Aktueller Wert', num: true }, { label: 'Unrealisiert', num: true }],
+      openRows, 'Keine offenen Lots.'));
+  }
+
+  function renderHolding() {
+    coinOptions($('holding-coin'));
+    const coinFilter = $('holding-coin').value;
+    const showSold = $('holding-show-sold').checked;
+    const t = today();
+    const rows = [];
+    for (const l of app.fifo.lots) {
+      if (coinFilter && l.coinId !== coinFilter) continue;
+      const info = Core.holdingInfo(l, t);
+      if (info.status === 'sold' && !showSold) continue;
+      const statusText = info.status === 'sold' ? '■ vollständig verkauft'
+        : info.status === 'over1y' ? '✔ rechnerisch länger als ein Jahr gehalten' : '⏳ Haltefrist noch nicht erreicht';
+      rows.push({ cells: [
+        l.coinName + ' (' + l.symbol + ')', fmtDate(info.buyDate), fmtDate(info.deadline), fmtDate(info.freeFrom),
+        { content: fmtQty(info.openQuantity) }, { content: info.remainingDays === null ? '–' : String(info.remainingDays) },
+        { content: statusText, className: info.status === 'over1y' ? 'gain-pos' : null }] });
+    }
+    clear($('holding-list')).append(dataTable('Haltefrist je Kauf-Lot',
+      [{ label: 'Coin' }, { label: 'Kaufdatum' }, { label: 'Datum nach einem Jahr (Fristende)' }, { label: 'Länger als 1 Jahr ab' },
+        { label: 'Offene Menge', num: true }, { label: 'Verbleibende Tage', num: true }, { label: 'Status' }],
+      rows, 'Keine Kauf-Lots vorhanden.'));
+  }
+
+  function renderStorageUsage() {
+    let bytes = 0;
+    for (const k of Object.values(KEYS)) {
+      const r = storageGet(k);
+      if (r.ok && r.value) bytes += r.value.length * 2;
+    }
+    $('storage-usage').textContent = app.storageOk
+      ? 'Belegter Speicher dieser App: ca. ' + nf('kb', { maximumFractionDigits: 1 }).format(bytes / 1024) + ' KB (Browsergrenze meist ca. 5 MB).'
+      : 'LocalStorage ist nicht verfügbar – Daten werden nicht dauerhaft gespeichert.';
+  }
+
+  function renderLockState() {
+    const locked = !!app.corrupt;
+    $('btn-tx-save').disabled = locked;
+    $('btn-export-json').disabled = locked;
+    $('btn-export-csv').disabled = locked;
+  }
+
+  function renderAll() {
+    renderPriceStatus();
+    renderLockState();
+    renderDashboard();
+    renderTransactions();
+    renderFifo();
+    renderHolding();
+    renderStorageUsage();
+  }
+
+  /* ---------------- Formular ---------------- */
+  const FIELD_INPUT = { type: 'f-type-buy', coinId: 'f-coin-id', coinName: 'f-coin-name', symbol: 'f-symbol', quantity: 'f-quantity',
+    inputPrice: 'f-price', priceEur: 'f-price', inputCurrency: 'f-currency', fxUsdPerEur: 'f-currency', date: 'f-date', time: 'f-time',
+    fee: 'f-fee', feeType: 'f-fee-type', exchange: 'f-exchange', note: 'f-note' };
+  const FIELD_ERROR_EL = { type: 'err-type', coinId: 'err-coinId', coinName: 'err-coinName', symbol: 'err-symbol', quantity: 'err-quantity',
+    inputPrice: 'err-inputPrice', priceEur: 'err-inputPrice', inputCurrency: 'err-inputCurrency', fxUsdPerEur: 'err-inputCurrency',
+    date: 'err-date', time: 'err-time', fee: 'err-fee', feeType: 'err-feeType', exchange: 'err-exchange', note: 'err-note' };
+
+  function clearFormErrors() {
+    $('tx-form-errors').hidden = true;
+    clear($('tx-form-error-list'));
+    for (const id of Object.values(FIELD_ERROR_EL)) { const e = $(id); e.hidden = true; e.textContent = ''; }
+    for (const id of Object.values(FIELD_INPUT)) $(id).removeAttribute('aria-invalid');
+  }
+  function showFormErrors(errors) {
+    clearFormErrors();
+    const list = $('tx-form-error-list');
+    let firstInput = null;
+    for (const e of errors) {
+      list.append(h('li', { text: e.message }));
+      if (e.field && FIELD_ERROR_EL[e.field]) {
+        const el = $(FIELD_ERROR_EL[e.field]);
+        el.textContent = el.textContent ? el.textContent + ' ' + e.message : e.message;
+        el.hidden = false;
+        const input = $(FIELD_INPUT[e.field]);
+        input.setAttribute('aria-invalid', 'true');
+        if (!firstInput) firstInput = input;
+      }
+    }
+    $('tx-form-errors').hidden = false;
+    $('tx-form-errors').focus();
+  }
+
+  function readForm() {
+    return {
+      type: $('f-type-sell').checked ? 'sell' : 'buy',
+      coinId: $('f-coin-id').value.trim().toLowerCase(),
+      coinName: $('f-coin-name').value,
+      symbol: $('f-symbol').value,
+      quantity: $('f-quantity').value,
+      inputPrice: $('f-price').value,
+      inputCurrency: $('f-currency').value,
+      date: $('f-date').value,
+      time: $('f-time').value,
+      fee: $('f-fee').value,
+      feeType: $('f-fee-type').value,
+      exchange: $('f-exchange').value,
+      note: $('f-note').value
+    };
+  }
+
+  function resetForm() {
+    app.editingId = null;
+    $('tx-form').reset();
+    const now = new Date();
+    $('f-date').value = Core.localDateString(now);
+    $('f-time').value = Core.localTimeString(now).slice(0, 5);
+    $('f-fee').value = '0';
+    $('tx-form-title').textContent = 'Transaktion erfassen';
+    $('btn-tx-save').textContent = 'Transaktion speichern';
+    $('btn-tx-cancel').hidden = true;
+    clear($('coin-search-results'));
+    $('coin-search-status').textContent = '';
+    clearFormErrors();
+  }
+
+  function fillForm(t) {
+    $('f-type-buy').checked = t.type === 'buy';
+    $('f-type-sell').checked = t.type === 'sell';
+    $('f-coin-id').value = t.coinId;
+    $('f-coin-name').value = t.coinName;
+    $('f-symbol').value = t.symbol;
+    $('f-quantity').value = inputNumber(t.quantity);
+    $('f-price').value = inputNumber(t.inputPrice);
+    $('f-currency').value = t.inputCurrency;
+    $('f-date').value = t.date;
+    $('f-time').value = t.time;
+    $('f-fee').value = inputNumber(t.fee);
+    $('f-fee-type').value = t.feeType;
+    $('f-exchange').value = t.exchange;
+    $('f-note').value = t.note;
+  }
+
+  function onSubmitForm(ev) {
+    ev.preventDefault();
+    if (app.corrupt) { showFormErrors([{ field: null, message: 'Die gespeicherten Daten sind beschädigt. Bitte zuerst die Wiederherstellung oben abschließen.' }]); return; }
+    const editing = app.editingId ? app.transactions.find((t) => t.id === app.editingId) : null;
+    if (app.editingId && !editing) { resetForm(); showError('Die bearbeitete Transaktion existiert nicht mehr.'); return; }
+    const raw = readForm();
+    raw.id = editing ? editing.id : newId();
+    raw.seq = editing ? editing.seq : app.nextSeq;
+    // Beim Bearbeiten einer USD-Transaktion den ursprünglichen Wechselkurs beibehalten.
+    const fxOpt = editing && editing.inputCurrency === 'USD' && raw.inputCurrency === 'USD'
+      ? editing.fxUsdPerEur : (app.prices.fx ? app.prices.fx.usdPerEur : undefined);
+    const v = Core.validateTransaction(raw, { today: today(), fxUsdPerEur: fxOpt });
+    if (!v.ok) { showFormErrors(v.errors); return; }
+    const next = editing ? app.transactions.map((t) => (t.id === editing.id ? v.tx : t)) : app.transactions.concat([v.tx]);
+    const lv = Core.validateTransactionList(next, {});
+    if (!lv.ok) {
+      showFormErrors(lv.errors.map((e) => ({ field: next[e.index] && next[e.index].id === v.tx.id ? e.field : null,
+        message: 'Nicht gespeichert – die Transaktionsfolge wäre danach ungültig: ' + e.message })));
+      return;
+    }
+    const nextSeq = editing ? app.nextSeq : app.nextSeq + 1;
+    if (commitTransactions(lv.transactions, nextSeq, lv.fifo, editing ? 'Transaktion aktualisiert.' : 'Transaktion gespeichert.')) resetForm();
+  }
+
+  function startEdit(id) {
+    const t = app.transactions.find((x) => x.id === id);
+    if (!t) return;
+    resetForm();
+    app.editingId = id;
+    fillForm(t);
+    $('tx-form-title').textContent = 'Transaktion bearbeiten';
+    $('btn-tx-save').textContent = 'Änderung speichern';
+    $('btn-tx-cancel').hidden = false;
+    $('tx-form-title').scrollIntoView({ block: 'start' });
+    $('f-quantity').focus();
+  }
+
+  async function deleteTx(id) {
+    const t = app.transactions.find((x) => x.id === id);
+    if (!t || app.corrupt) return;
+    const ok = await confirmDialog('Transaktion löschen?',
+      (t.type === 'buy' ? 'Kauf' : 'Verkauf') + ' von ' + fmtQty(t.quantity) + ' ' + t.symbol + ' vom ' + fmtDate(t.date) + ' wird endgültig gelöscht.', 'Löschen');
+    if (!ok) return;
+    const next = app.transactions.filter((x) => x.id !== id);
+    const lv = Core.validateTransactionList(next, {});
+    if (!lv.ok) {
+      showError('Löschen nicht möglich – die Transaktionsfolge wäre danach ungültig: ' + lv.errors.slice(0, 3).map((e) => e.message).join(' '));
+      return;
+    }
+    if (commitTransactions(lv.transactions, app.nextSeq, lv.fifo, 'Transaktion gelöscht.') && app.editingId === id) resetForm();
+  }
+
+  /* ---------------- Coin-Suche ---------------- */
+  function selectCoin(c) {
+    $('f-coin-id').value = c.id;
+    $('f-coin-name').value = c.name;
+    $('f-symbol').value = c.symbol;
+    clear($('coin-search-results'));
+    $('coin-search-status').textContent = 'Ausgewählt: ' + c.name + ' (' + c.symbol + ').';
+    $('f-quantity').focus();
+  }
+
+  async function onCoinSearch() {
+    const q = $('f-coin-search').value.trim();
+    const status = $('coin-search-status');
+    const list = clear($('coin-search-results'));
+    if (q.length < 2 || q.length > 50) { status.textContent = 'Bitte 2 bis 50 Zeichen eingeben.'; return; }
+    status.textContent = 'Suche läuft …';
+    $('btn-coin-search').disabled = true;
+    try {
+      const json = await apiGet('/search?query=' + encodeURIComponent(q));
+      const r = Core.validateSearchResponse(json);
+      if (!r.ok) throw new ApiError('invalid', r.error);
+      if (!r.coins.length) { status.textContent = 'Keine Treffer.'; return; }
+      status.textContent = r.coins.length + ' Treffer – bitte auswählen.';
+      for (const c of r.coins) {
+        const b = h('button', { type: 'button' }, c.name + ' (' + c.symbol + ')', h('span', { className: 'hint', text: ' · ' + c.id }));
+        b.addEventListener('click', () => selectCoin(c));
+        list.append(h('li', null, b));
+      }
+    } catch (e) {
+      status.textContent = (e instanceof ApiError ? e.message : 'Suche fehlgeschlagen.') + ' Coin ggf. manuell eintragen.';
+    } finally {
+      $('btn-coin-search').disabled = false;
+    }
+  }
+
+  function onKnownCoin() {
+    const id = $('f-known-coin').value;
+    const c = app.fifo.coinMap[id];
+    if (c) selectCoin({ id: c.coinId, name: c.coinName, symbol: c.symbol });
+    $('f-known-coin').value = '';
+  }
+
+  function onUseCurrentPrice() {
+    const id = $('f-coin-id').value.trim().toLowerCase();
+    const p = app.prices.coins[id];
+    const cur = $('f-currency').value;
+    if (!p) { showStatus('Für diesen Coin liegt kein gespeicherter Kurs vor. Bitte Kurse aktualisieren.'); return; }
+    if (cur === 'USD' && !app.prices.fx) { showStatus('Kein EUR/USD-Kurs vorhanden.'); return; }
+    const v = cur === 'USD' ? p.eur * app.prices.fx.usdPerEur : p.eur;
+    $('f-price').value = inputNumber(Number(v.toPrecision(10)));
+    showStatus('Kurs vom ' + fmtDateTimeMs(p.updatedAt) + ' übernommen' + (priceIsStale(p) ? ' (möglicherweise veraltet).' : '.'));
+  }
+
+  /* ---------------- Import / Export ---------------- */
+  async function readFileLimited(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return null;
+    if (file.size > Core.LIMITS.MAX_IMPORT_BYTES) throw new Error('Datei ist zu groß (' + Math.round(file.size / 1024) + ' KB, max. 5 MB).');
+    return { name: file.name, text: await file.text() };
+  }
+
+  function showImportPreview(result, kind, fileName) {
+    const body = clear($('import-preview-body'));
+    $('import-preview').hidden = false;
+    body.append(h('p', null, 'Datei: ', h('strong', { text: fileName })));
+    if (!result.ok) {
+      app.pendingImport = null;
+      body.append(h('div', { className: 'notice error', role: 'alert' },
+        h('p', { text: 'Import nicht möglich. Es wurden keine Daten verändert. Gefundene Fehler:' }),
+        h('ul', { className: 'error-list' }, result.errors.slice(0, 100).map((e) => h('li', { text: Core.formatListError(e) })),
+          result.errors.length > 100 ? h('li', { text: '… und ' + (result.errors.length - 100) + ' weitere Fehler.' }) : null)));
+      $('btn-import-apply').disabled = true;
+      $('import-preview').scrollIntoView({ block: 'start' });
+      return;
+    }
+    app.pendingImport = { kind: kind, result: result };
+    const s = result.summary;
+    const items = [];
+    if (kind === 'json') {
+      items.push('Transaktionen: ' + s.count + ' (' + s.buys + ' Käufe, ' + s.sells + ' Verkäufe)');
+      if (result.migratedFrom === 0) items.push('Altformat erkannt – wird auf Schema-Version ' + Core.SCHEMA_VERSION + ' migriert.');
+      items.push(result.snapshots ? 'Portfolio-Verlauf: ' + result.snapshots.length + ' Tageswerte (ersetzen den vorhandenen Verlauf)' : 'Kein Portfolio-Verlauf enthalten (vorhandener Verlauf bleibt).');
+      items.push('Wirkung: ersetzt alle ' + app.transactions.length + ' vorhandenen Transaktionen.');
+    } else {
+      items.push('Neue Transaktionen: ' + result.added + ' (' + s.buys + ' Käufe, ' + s.sells + ' Verkäufe)');
+      items.push(result.mode === 'append' ? 'Wirkung: werden an ' + app.transactions.length + ' vorhandene Transaktionen angehängt.' : 'Wirkung: ersetzen alle ' + app.transactions.length + ' vorhandenen Transaktionen.');
+      (result.notices || []).forEach((n) => items.push('Hinweis: ' + n));
+    }
+    if (s.count) items.push('Coins: ' + s.coins.join(', ') + ' · Zeitraum ' + fmtDate(s.firstDate) + ' bis ' + fmtDate(s.lastDate));
+    items.push('Die gesamte zeitliche Bestandsfolge wurde geprüft: keine Überverkäufe.');
+    body.append(h('div', { className: 'notice ok' }, h('p', { text: 'Prüfung erfolgreich. Noch wurde nichts übernommen.' }),
+      h('ul', { className: 'error-list' }, items.map((t) => h('li', { text: t })))));
+    $('btn-import-apply').disabled = false;
+    $('import-preview').scrollIntoView({ block: 'start' });
+  }
+
+  async function onJsonFile() {
+    try {
+      const f = await readFileLimited($('file-json'));
+      if (!f) return;
+      showImportPreview(Core.prepareJsonImport(f.text, { today: today() }), 'json', f.name);
+    } catch (e) {
+      showImportPreview({ ok: false, errors: [{ index: null, message: String(e && e.message) }] }, 'json', '–');
+    }
+  }
+
+  async function onCsvFile() {
+    try {
+      const f = await readFileLimited($('file-csv'));
+      if (!f) return;
+      const mode = $('csv-mode-replace').checked ? 'replace' : 'append';
+      if (mode === 'append' && app.corrupt) {
+        showImportPreview({ ok: false, errors: [{ line: null, message: 'Anhängen ist nicht möglich, solange die gespeicherten Daten beschädigt sind. Bitte Modus „ersetzen“ wählen.' }] }, 'csv', f.name);
+        return;
+      }
+      const res = Core.prepareCsvImport(f.text, { existing: app.transactions, mode: mode, today: today(),
+        fxUsdPerEur: app.prices.fx ? app.prices.fx.usdPerEur : undefined, startSeq: mode === 'append' ? app.nextSeq : 1, idFactory: newId });
+      showImportPreview(res, 'csv', f.name);
+    } catch (e) {
+      showImportPreview({ ok: false, errors: [{ line: null, message: String(e && e.message) }] }, 'csv', '–');
+    }
+  }
+
+  async function onApplyImport() {
+    const p = app.pendingImport;
+    if (!p) return;
+    const replaces = p.kind === 'json' || p.result.mode === 'replace';
+    if (replaces) {
+      const ok = await confirmDialog('Daten ersetzen?', 'Alle vorhandenen Transaktionen' + (app.corrupt ? ' (auch die beschädigten gespeicherten Daten)' : '') + ' werden durch den Import ersetzt. Tipp: vorher ein Backup herunterladen.', 'Ersetzen');
+      if (!ok) return;
+    }
+    let txs, nextSeq, fifo;
+    if (p.kind === 'json') { txs = p.result.state.transactions; nextSeq = p.result.state.nextSeq; fifo = p.result.fifo; }
+    else {
+      txs = p.result.transactions; fifo = p.result.fifo;
+      let maxSeq = 0; for (const t of txs) if (t.seq > maxSeq) maxSeq = t.seq;
+      nextSeq = maxSeq + 1;
+    }
+    if (!commitTransactions(txs, nextSeq, fifo, 'Import übernommen.')) return;
+    if (p.kind === 'json' && p.result.snapshots) { saveSnapshots(p.result.snapshots); renderCharts(); }
+    app.pendingImport = null;
+    $('import-preview').hidden = true;
+    clear($('import-preview-body'));
+    refreshPrices();
+  }
+
+  function onDiscardImport() {
+    app.pendingImport = null;
+    $('import-preview').hidden = true;
+    clear($('import-preview-body'));
+    showStatus('Import verworfen. Es wurden keine Daten verändert.');
+  }
+
+  function onExportJson() {
+    if (app.corrupt) return;
+    const payload = Core.buildStatePayload(app.transactions, app.nextSeq);
+    payload.exportedAt = new Date().toISOString();
+    payload.snapshots = app.snapshots;
+    download('krypto-portfolio-backup-' + today() + '.json', JSON.stringify(payload, null, 2), 'application/json');
+    showStatus('JSON-Backup erstellt.');
+  }
+  function onExportCsv() {
+    if (app.corrupt) return;
+    download('krypto-portfolio-' + today() + '.csv', Core.transactionsToCsv(app.transactions), 'text/csv;charset=utf-8');
+    showStatus('CSV exportiert.');
+  }
+
+  async function onDeleteAll() {
+    const ok = await confirmDialog('Alle Daten löschen?', 'Transaktionen, Kurse, Verlauf und Einstellungen werden aus diesem Browser entfernt. Das kann nicht rückgängig gemacht werden.', 'Alles löschen');
+    if (!ok) return;
+    for (const k of Object.values(KEYS)) storageRemove(k);
+    app.transactions = []; app.nextSeq = 1; app.fifo = Core.computeFifo([]); app.corrupt = null;
+    app.snapshots = []; app.snapshotsCorrupt = false; app.prices = { coins: Object.create(null), fx: null, lastSuccessAt: null };
+    $('recovery-panel').hidden = true;
+    hideError();
+    resetForm();
+    renderAll();
+    showStatus('Alle Daten wurden gelöscht.');
+  }
+
+  async function onRecoveryDiscard() {
+    const ok = await confirmDialog('Beschädigte Daten verwerfen?', 'Die beschädigten gespeicherten Daten werden endgültig entfernt. Tipp: vorher „Rohdaten herunterladen“.', 'Verwerfen');
+    if (!ok) return;
+    const r = storageRemove(KEYS.data);
+    if (!r.ok) { showError('Entfernen fehlgeschlagen.'); return; }
+    app.corrupt = null;
+    $('recovery-panel').hidden = true;
+    renderAll();
+    showStatus('Beschädigte Daten wurden verworfen.');
+  }
+
+  /* ---------------- Systemprüfung ---------------- */
+  function runSystemChecks() {
+    const results = [];
+    const addR = (level, name, detail) => results.push({ level: level, name: name, detail: detail || '' });
+    Core.selfTest().forEach((t) => addR(t.ok ? 'ok' : 'fail', 'Rechenkern: ' + t.name, t.detail));
+    if (app.corrupt) addR('fail', 'Gespeicherte Daten', 'Beschädigt – Wiederherstellung erforderlich.');
+    else {
+      const lv = Core.validateTransactionList(app.transactions, {});
+      addR(lv.ok ? 'ok' : 'fail', 'Gespeicherte Transaktionsfolge', lv.ok ? app.transactions.length + ' Transaktionen gültig, keine Überverkäufe.' : lv.errors.slice(0, 3).map((e) => e.message).join(' '));
+    }
+    const probeKey = 'kryptoPortfolio.probe';
+    const w = storageSet(probeKey, '1');
+    if (w.ok) { storageRemove(probeKey); addR('ok', 'LocalStorage', 'Lesen und Schreiben möglich (unverschlüsselt, nicht revisionssicher).'); }
+    else addR('fail', 'LocalStorage', w.quota ? 'Speichergrenze erreicht.' : 'Nicht verfügbar.');
+    addR(app.snapshotsCorrupt ? 'warn' : 'ok', 'Portfolio-Verlauf', app.snapshotsCorrupt ? 'Beschädigt, wird nicht verwendet.' : app.snapshots.length + ' Tageswerte.');
+    addR(app.chartState === 'ready' ? 'ok' : 'warn', 'Chart.js', app.chartState === 'ready' ? 'Geladen (Version 4.4.1, SRI geprüft).' : 'Nicht geladen – Diagramme deaktiviert, alle anderen Funktionen nutzbar.');
+    const ids = coinIdsInPortfolio();
+    const missing = ids.filter((id) => !app.prices.coins[id]);
+    const stale = ids.filter((id) => app.prices.coins[id] && priceIsStale(app.prices.coins[id]));
+    addR(missing.length ? 'warn' : stale.length ? 'warn' : 'ok', 'Kurse',
+      missing.length ? 'Ohne Kurs: ' + missing.join(', ') : stale.length ? 'Möglicherweise veraltet: ' + stale.join(', ') : ids.length ? 'Alle Kurse aktuell.' : 'Keine Coins im Portfolio.');
+    addR(app.prices.fx ? 'ok' : 'warn', 'EUR/USD-Wechselkurs', app.prices.fx ? '1 € = ' + app.prices.fx.usdPerEur.toFixed(4) + ' $ (' + fmtDateTimeMs(app.prices.fx.updatedAt) + ')' : 'Nicht vorhanden – USD-Anzeige und USD-Eingabe nicht möglich.');
+    addR(navigator.onLine === false ? 'warn' : 'ok', 'Netzwerk', navigator.onLine === false ? 'Offline – gespeicherte Daten werden verwendet.' : 'Online (laut Browser).');
+    const csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    addR(csp ? 'ok' : 'fail', 'Content Security Policy', csp ? 'Per Meta-Tag gesetzt (Skripte per Hash, Netzwerk nur CoinGecko).' : 'Fehlt.');
+    let inlineHandlers = 0;
+    document.querySelectorAll('*').forEach((el) => { for (const a of el.attributes) if (/^on/i.test(a.name)) inlineHandlers++; });
+    addR(inlineHandlers === 0 ? 'ok' : 'fail', 'Keine Inline-Eventhandler im DOM', inlineHandlers ? inlineHandlers + ' gefunden.' : '');
+    addR(window.isSecureContext || location.protocol === 'file:' ? 'ok' : 'warn', 'Zufalls-IDs', (window.crypto && window.crypto.getRandomValues) ? 'crypto.getRandomValues verfügbar.' : 'Nicht verfügbar.');
+
+    const list = clear($('system-results'));
+    const symbol = { ok: '✔ OK', warn: '⚠ Warnung', fail: '✖ Fehler' };
+    for (const r of results) {
+      list.append(h('li', { className: r.level }, h('strong', { text: symbol[r.level] + ' – ' + r.name }), r.detail ? h('div', { className: 'hint', text: r.detail }) : null));
+    }
+    const fails = results.filter((r) => r.level === 'fail').length;
+    const warns = results.filter((r) => r.level === 'warn').length;
+    $('system-summary').textContent = results.length + ' Prüfungen: ' + (results.length - fails - warns) + ' OK, ' + warns + ' Warnungen, ' + fails + ' Fehler.';
+  }
+
+  /* ---------------- Tabs ---------------- */
+  function selectTab(name, focus) {
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+    for (const t of tabs) {
+      const sel = t.dataset.tab === name;
+      t.setAttribute('aria-selected', sel ? 'true' : 'false');
+      t.tabIndex = sel ? 0 : -1;
+      $(t.getAttribute('aria-controls')).hidden = !sel;
+      if (sel && focus) t.focus();
+    }
+    if (name === 'dashboard') renderCharts();
+  }
+  function onTabKey(ev) {
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    let n = null;
+    if (ev.key === 'ArrowRight') n = (i + 1) % tabs.length;
+    else if (ev.key === 'ArrowLeft') n = (i - 1 + tabs.length) % tabs.length;
+    else if (ev.key === 'Home') n = 0;
+    else if (ev.key === 'End') n = tabs.length - 1;
+    if (n !== null) { ev.preventDefault(); selectTab(tabs[n].dataset.tab, true); }
+  }
+
+  /* ---------------- Start ---------------- */
+  function init() {
+    loadSettings();
+    loadData();
+    loadPrices();
+    loadSnapshots();
+    $('cur-usd').checked = app.settings.displayCurrency === 'USD';
+    $('cur-eur').checked = app.settings.displayCurrency !== 'USD';
+
+    document.querySelectorAll('[role="tab"]').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab, false)));
+    $('tablist').addEventListener('keydown', onTabKey);
+    document.querySelectorAll('input[name="display-currency"]').forEach((r) => r.addEventListener('change', () => {
+      app.settings.displayCurrency = $('cur-usd').checked ? 'USD' : 'EUR';
+      saveSettings();
+      renderAll();
+    }));
+    $('btn-refresh').addEventListener('click', () => { refreshPrices(); });
+    $('app-error-close').addEventListener('click', hideError);
+    $('tx-form').addEventListener('submit', onSubmitForm);
+    $('btn-tx-cancel').addEventListener('click', () => { resetForm(); showStatus('Bearbeitung abgebrochen.'); });
+    $('btn-tx-reset').addEventListener('click', () => { resetForm(); });
+    $('btn-coin-search').addEventListener('click', onCoinSearch);
+    $('f-coin-search').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); onCoinSearch(); } });
+    $('f-known-coin').addEventListener('change', onKnownCoin);
+    $('btn-use-current-price').addEventListener('click', onUseCurrentPrice);
+    $('tx-filter').addEventListener('input', () => { app.txLimit = TX_PAGE; renderTransactions(); });
+    $('tx-list').addEventListener('click', (ev) => {
+      const b = ev.target instanceof Element ? ev.target.closest('button[data-action]') : null;
+      if (!b) return;
+      if (b.dataset.action === 'edit') startEdit(b.dataset.id);
+      else if (b.dataset.action === 'delete') deleteTx(b.dataset.id);
+    });
+    $('fifo-coin').addEventListener('change', renderFifo);
+    $('holding-coin').addEventListener('change', renderHolding);
+    $('holding-show-sold').addEventListener('change', renderHolding);
+    $('file-json').addEventListener('change', onJsonFile);
+    $('file-csv').addEventListener('change', onCsvFile);
+    $('btn-import-apply').addEventListener('click', onApplyImport);
+    $('btn-import-discard').addEventListener('click', onDiscardImport);
+    $('btn-export-json').addEventListener('click', onExportJson);
+    $('btn-export-csv').addEventListener('click', onExportCsv);
+    $('btn-delete-all').addEventListener('click', onDeleteAll);
+    $('btn-run-checks').addEventListener('click', runSystemChecks);
+    $('btn-export-copy').addEventListener('click', copyExport);
+    $('btn-export-close').addEventListener('click', () => { $('export-fallback').hidden = true; $('export-text').value = ''; });
+    $('btn-recovery-download').addEventListener('click', () => { if (app.corrupt) download('krypto-portfolio-rohdaten-' + today() + '.txt', String(app.corrupt.raw), 'text/plain;charset=utf-8'); });
+    $('btn-recovery-import').addEventListener('click', () => { selectTab('data', false); $('file-json').click(); });
+    $('btn-recovery-discard').addEventListener('click', onRecoveryDiscard);
+    window.addEventListener('online', () => { refreshPrices(); });
+    registerWebApp();
+
+    resetForm();
+    renderAll();
+    loadChartJs();
+    refreshPrices();
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine !== false && Date.now() >= app.cooldownUntil) refreshPrices();
+    }, AUTO_REFRESH_MS);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
