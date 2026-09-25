@@ -4,7 +4,7 @@
    - Anfragen an fremde Server (CoinGecko-Kurse) werden NIE zwischengespeichert; die App verwaltet
      ihre Kurse selbst und kennzeichnet veraltete Werte. */
 'use strict';
-const CACHE = 'krypto-portfolio-ctIaXwjZF2JO';
+const CACHE = 'krypto-portfolio-NQJBAOjXvvRg';
 const SHELL = ["./","./index.html","./manifest.webmanifest","./chart.umd.js","./icons/icon-180.png","./icons/icon-192.png","./icons/icon-512.png","./icons/icon-maskable-512.png"];
 
 self.addEventListener('install', (event) => {

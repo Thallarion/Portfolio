@@ -22,7 +22,7 @@
     lokal mitgelieferte Kopie der Bibliothek (keine Abhängigkeit vom CDN).
   - Netzwerkzugriffe sind nur zu https://api.coingecko.com erlaubt.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-4jXTuYAiSts0eE8eeV0qLBNGTwAe5ryKS+CT02b0OPQ=' 'sha256-x/Mt0ca0hbr2yZ3bAKgSCeO30WRAG17OKkaxNtjjpss=' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js; style-src 'unsafe-inline'; connect-src https://api.coingecko.com; img-src 'self' data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'; media-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-4jXTuYAiSts0eE8eeV0qLBNGTwAe5ryKS+CT02b0OPQ=' 'sha256-fw5V9MUphH8gndJHykrctGvALOKLBAU32HplOTsB1bE=' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js; style-src 'unsafe-inline'; connect-src https://api.coingecko.com; img-src 'self' data:; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'self'; manifest-src 'self'; media-src 'none'">
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#17325e">
@@ -313,7 +313,8 @@
           <div class="field">
             <label for="f-price">Preis pro Einheit</label>
             <input type="text" id="f-price" inputmode="decimal" autocomplete="off" aria-describedby="err-inputPrice">
-            <button type="button" id="btn-use-current-price" class="small">Aktuellen Kurs übernehmen</button>
+            <button type="button" id="btn-use-current-price" class="small" aria-describedby="price-fetch-status">Aktuellen Kurs übernehmen</button>
+            <p class="hint" id="price-fetch-status" role="status" aria-live="polite"></p>
             <p class="field-error" id="err-inputPrice" hidden></p>
           </div>
           <div class="field">
@@ -2291,6 +2292,7 @@
     $('btn-tx-cancel').hidden = true;
     clear($('coin-search-results'));
     $('coin-search-status').textContent = '';
+    $('price-fetch-status').textContent = '';
     clearFormErrors();
   }
 
@@ -2370,6 +2372,7 @@
     $('f-symbol').value = c.symbol;
     clear($('coin-search-results'));
     $('coin-search-status').textContent = 'Ausgewählt: ' + c.name + ' (' + c.symbol + ').';
+    $('price-fetch-status').textContent = '';
     $('f-quantity').focus();
   }
 
@@ -2405,15 +2408,53 @@
     $('f-known-coin').value = '';
   }
 
-  function onUseCurrentPrice() {
+  /* Übernimmt den aktuellen Kurs des im Formular gewählten Coins. Fehlt ein frischer Kurs (z. B. bei
+     einem Coin, der noch nicht im Portfolio ist), wird er gezielt bei CoinGecko abgefragt und geprüft.
+     Die Rückmeldung erscheint direkt unter dem Button, damit sie auch auf dem Handy sichtbar ist. */
+  async function onUseCurrentPrice() {
+    const out = $('price-fetch-status');
+    const btn = $('btn-use-current-price');
     const id = $('f-coin-id').value.trim().toLowerCase();
-    const p = app.prices.coins[id];
     const cur = $('f-currency').value;
-    if (!p) { showStatus('Für diesen Coin liegt kein gespeicherter Kurs vor. Bitte Kurse aktualisieren.'); return; }
-    if (cur === 'USD' && !app.prices.fx) { showStatus('Kein EUR/USD-Kurs vorhanden.'); return; }
+    if (!id) { out.textContent = '⚠ Bitte zuerst einen Coin über die Suche auswählen oder die Coin-ID eintragen.'; return; }
+    if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(id)) { out.textContent = '⚠ Die Coin-ID ist ungültig.'; return; }
+    let p = app.prices.coins[id];
+    let note = '';
+    const needPrice = !p || priceIsStale(p);
+    const needFx = cur === 'USD' && (!app.prices.fx || Date.now() - app.prices.fx.updatedAt > STALE_AFTER_MS);
+    if (needPrice || needFx) {
+      out.textContent = 'Kurs wird bei CoinGecko abgefragt …';
+      btn.disabled = true;
+      const started = Date.now();
+      try {
+        if (needPrice) {
+          const r = Core.validateSimplePriceResponse(await apiGet('/simple/price?ids=' + encodeURIComponent(id) + '&vs_currencies=eur'), [id]);
+          if (r.ok && Core.isValidApiPrice(r.prices[id])) {
+            app.prices.coins[id] = { eur: r.prices[id], updatedAt: started };
+            p = app.prices.coins[id];
+          } else if (!p) {
+            out.textContent = '⚠ CoinGecko liefert für „' + id + '“ keinen gültigen Kurs. Stimmt die Coin-ID? Preis bitte von Hand eintragen.';
+            return;
+          } else note = ' CoinGecko lieferte keinen neuen Kurs.';
+        }
+        if (needFx) {
+          const fx = Core.validateExchangeRatesResponse(await apiGet('/exchange_rates'));
+          if (fx.ok) app.prices.fx = { usdPerEur: fx.usdPerEur, updatedAt: started };
+        }
+        savePrices();
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : 'Kursabruf fehlgeschlagen.';
+        if (!p) { out.textContent = '⚠ ' + msg + ' Preis bitte von Hand eintragen.'; return; }
+        note = ' Aktualisierung nicht möglich (' + msg + ')';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    if (cur === 'USD' && !app.prices.fx) { out.textContent = '⚠ Kein EUR/USD-Kurs verfügbar. Bitte in EUR erfassen oder später erneut versuchen.'; return; }
     const v = cur === 'USD' ? p.eur * app.prices.fx.usdPerEur : p.eur;
     $('f-price').value = inputNumber(Number(v.toPrecision(10)));
-    showStatus('Kurs vom ' + fmtDateTimeMs(p.updatedAt) + ' übernommen' + (priceIsStale(p) ? ' (möglicherweise veraltet).' : '.'));
+    $('f-price').removeAttribute('aria-invalid');
+    out.textContent = '✔ Kurs vom ' + fmtDateTimeMs(p.updatedAt) + ' übernommen' + (priceIsStale(p) ? ' – möglicherweise veraltet.' : '.') + note;
   }
 
   /* ---------------- Import / Export ---------------- */
